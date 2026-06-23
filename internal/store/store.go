@@ -146,6 +146,37 @@ func (s *Store) PlaylistByEntryID(lbEntryID string) (*Playlist, error) {
 	return scanPlaylist(row)
 }
 
+// AllPlaylists returns every playlist, newest first (for the UI).
+func (s *Store) AllPlaylists() ([]Playlist, error) {
+	rows, err := s.db.Query(`
+		SELECT id, feed_name, lb_entry_id, title, navidrome_user,
+		       navidrome_playlist_id, status, created_at, updated_at
+		FROM playlists ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Playlist
+	for rows.Next() {
+		p, err := scanPlaylist(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	return out, rows.Err()
+}
+
+// PlaylistByID returns a single playlist, or nil if not found.
+func (s *Store) PlaylistByID(id int64) (*Playlist, error) {
+	row := s.db.QueryRow(`
+		SELECT id, feed_name, lb_entry_id, title, navidrome_user,
+		       navidrome_playlist_id, status, created_at, updated_at
+		FROM playlists WHERE id = ?`, id)
+	return scanPlaylist(row)
+}
+
 // ActivePlaylists returns playlists not yet marked done, for the daemon to advance.
 func (s *Store) ActivePlaylists() ([]Playlist, error) {
 	rows, err := s.db.Query(`

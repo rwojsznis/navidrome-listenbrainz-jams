@@ -16,6 +16,7 @@ COPY --from=build /out/navidrome-lb-jams /navidrome-lb-jams
 # Mount points: /config (config.yaml), /data (state.db), plus the Navidrome music
 # library and slskd downloads dir (paths set in config.yaml).
 VOLUME ["/data"]
+EXPOSE 8080
 
 ENTRYPOINT ["/navidrome-lb-jams"]
 CMD ["-config", "/config/config.yaml"]

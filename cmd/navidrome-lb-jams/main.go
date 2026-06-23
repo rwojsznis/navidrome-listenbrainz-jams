@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +20,7 @@ import (
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/pipeline"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/slskd"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/web"
 )
 
 func main() {
@@ -61,6 +64,22 @@ func main() {
 	if *once {
 		app.tick(ctx)
 		return
+	}
+
+	// Read-only status dashboard (daemon mode only).
+	if cfg.Web.Listen != "" {
+		websrv := web.New(st, cfg.Web.Listen, logger)
+		go func() {
+			slog.Info("dashboard listening", "addr", cfg.Web.Listen)
+			if err := websrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("dashboard server", "err", err)
+			}
+		}()
+		defer func() {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = websrv.Shutdown(shutCtx)
+		}()
 	}
 
 	slog.Info("daemon started", "poll_interval", cfg.PollInterval.String(), "feeds", len(cfg.Feeds))

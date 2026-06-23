@@ -24,6 +24,13 @@ It is **idempotent** and **resumable**: state is kept in SQLite, an existing
 playlist is never duplicated, and missing tracks are backfilled on later runs
 (best-effort). A playlist is considered done only when every track is placed.
 
+## Status dashboard
+
+A read-only web UI (default `http://localhost:8080`, set via `web.listen`) lists
+each discovered playlist with a progress bar, and a click-through page shows every
+track's state (in playlist / downloading / downloaded / missing / pending),
+attempts, last error, and the imported filename.
+
 ## How tracks flow between services
 
 ```
@@ -54,6 +61,7 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `download.min_bitrate` | Minimum kbps for lossy candidates |
 | `download.max_retries` | Search/download attempts before a track is left missing |
 | `matching.fuzzy_threshold` | 0..1 similarity required to accept a match |
+| `web.listen` | Dashboard address, e.g. `:8080` (empty disables it) |
 | `feeds[]` | One entry per feed: `name`, `rss_url`, `navidrome_user`, `navidrome_pass` |
 
 Playlists are per-user in Navidrome, so each feed authenticates as its own
@@ -115,4 +123,5 @@ internal/files          locate + move completed downloads
 internal/store          SQLite state
 internal/downloader     slskd-backed download step (pipeline.Downloader)
 internal/pipeline       orchestration / state machine
+internal/web            read-only status dashboard
 ```

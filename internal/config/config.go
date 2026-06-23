@@ -21,7 +21,14 @@ type Config struct {
 	Download     Download      `yaml:"download"`
 	Matching     Matching      `yaml:"matching"`
 	State        State         `yaml:"state"`
+	Web          Web           `yaml:"web"`
 	Feeds        []Feed        `yaml:"feeds"`
+}
+
+// Web controls the read-only status dashboard.
+type Web struct {
+	// Listen is the address to serve the UI on (e.g. ":8080"). Empty disables it.
+	Listen string `yaml:"listen"`
 }
 
 // Navidrome holds connection details for the Navidrome (Subsonic) instance.
@@ -83,6 +90,7 @@ var defaults = Config{
 	},
 	Matching: Matching{FuzzyThreshold: 0.85},
 	State:    State{DBPath: "/data/state.db"},
+	Web:      Web{Listen: ":8080"},
 }
 
 // Load reads, interpolates, parses and validates the config file at path.

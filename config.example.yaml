@@ -34,6 +34,10 @@ matching:
 state:
   db_path: /data/state.db
 
+web:
+  # Read-only status dashboard address. Empty disables it.
+  listen: ":8080"
+
 # One entry per ListenBrainz RSS feed. Multiple feeds and multiple users are
 # supported; each feed's playlist is created owned by its navidrome_user.
 feeds:
