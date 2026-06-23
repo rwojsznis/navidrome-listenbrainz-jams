@@ -29,6 +29,8 @@ func New(st *store.Store, addr string, log *slog.Logger) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/playlist/{id}", s.handlePlaylist)
+	mux.HandleFunc("POST /track/{id}/retry", s.handleRetryTrack)
+	mux.HandleFunc("POST /playlist/{id}/retry-missing", s.handleRetryMissing)
 	s.srv = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return s
 }
@@ -144,6 +146,40 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleRetryTrack(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	playlistID, err := s.store.RetryTrack(id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if playlistID == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	s.log.Info("retry track requested", "track_id", id, "playlist_id", playlistID)
+	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(playlistID, 10), http.StatusSeeOther)
+}
+
+func (s *Server) handleRetryMissing(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	n, err := s.store.RetryMissing(id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.log.Info("retry missing requested", "playlist_id", id, "reset", n)
+	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
@@ -167,6 +203,7 @@ var funcs = template.FuncMap{
 		}
 		return m
 	},
+	"isMissing": func(st store.TrackStatus) bool { return st == store.TrackMissing },
 	"statusClass": func(st store.TrackStatus) string {
 		switch st {
 		case store.TrackInPlaylist:
@@ -228,6 +265,10 @@ const pageTemplates = `
   .s-missing { background:#d04a4a33; color:#e06a6a; } .s-pending { background:#8883; color:#999; }
   .err { color:#e06a6a; font-size:.78rem; }
   .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
+  form.inline { display:inline; margin:0; }
+  button { font: inherit; font-size:.78rem; cursor:pointer; border:1px solid #8886; background:#8881; color:inherit; border-radius:6px; padding:.15rem .55rem; }
+  button:hover { background:#8883; }
+  button.primary { border-color:#2e74d088; }
 </style>
 </head><body>{{end}}
 
@@ -262,7 +303,14 @@ const pageTemplates = `
 {{template "head" (dict "Title" .Playlist.Title)}}
 <div class="topbar">
   <div><a class="muted" href="/">← all playlists</a><h1>{{.Playlist.Title}}</h1></div>
-  <span class="muted">{{.Counts.InPlaylist}}/{{.Counts.Total}} placed</span>
+  <div style="text-align:right">
+    <div class="muted">{{.Counts.InPlaylist}}/{{.Counts.Total}} placed</div>
+    {{if .Counts.Missing}}
+    <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/retry-missing">
+      <button class="primary" type="submit">↻ Retry {{.Counts.Missing}} missing</button>
+    </form>
+    {{end}}
+  </div>
 </div>
 <div class="bar"><span style="width:{{.Counts.Percent}}%"></span></div>
 <p class="pills">
@@ -287,6 +335,11 @@ const pageTemplates = `
         {{if .ImportedPath}}<span class="muted">{{base .ImportedPath}}</span>{{end}}
         {{if .SlskdUsername}}<span class="muted">⬇ {{.SlskdUsername}}</span>{{end}}
         {{if .LastError}}<div class="err">{{.LastError}}</div>{{end}}
+        {{if isMissing .Status}}
+        <form class="inline" method="post" action="/track/{{.ID}}/retry">
+          <button type="submit">↻ Retry</button>
+        </form>
+        {{end}}
       </td>
     </tr>
   {{end}}

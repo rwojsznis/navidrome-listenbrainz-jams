@@ -247,6 +247,61 @@ func (s *Store) TracksFor(playlistID int64) ([]Track, error) {
 	return out, rows.Err()
 }
 
+// RetryTrack resets a single track so the daemon re-attempts it, and reactivates
+// its playlist. Returns the playlist id (for redirecting the UI), or 0 if the
+// track does not exist.
+func (s *Store) RetryTrack(trackID int64) (int64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var playlistID int64
+	err = tx.QueryRow(`SELECT playlist_id FROM tracks WHERE id = ?`, trackID).Scan(&playlistID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(resetTrackSQL+` WHERE id = ?`, TrackPending, trackID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`UPDATE playlists SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, PlaylistPending, playlistID); err != nil {
+		return 0, err
+	}
+	return playlistID, tx.Commit()
+}
+
+// RetryMissing resets every missing track in a playlist and reactivates the
+// playlist. Returns how many tracks were reset.
+func (s *Store) RetryMissing(playlistID int64) (int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(resetTrackSQL+` WHERE playlist_id = ? AND status = ?`, TrackPending, playlistID, TrackMissing)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		if _, err := tx.Exec(`UPDATE playlists SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, PlaylistPending, playlistID); err != nil {
+			return 0, err
+		}
+	}
+	return int(n), tx.Commit()
+}
+
+// resetTrackSQL clears a track's progress so it is searched/downloaded afresh.
+// The caller appends a WHERE clause and supplies the new status as the first arg.
+const resetTrackSQL = `UPDATE tracks SET status = ?, attempts = 0, last_error = '',
+	slskd_username = '', slskd_file = '', navidrome_song_id = '',
+	imported_path = '', updated_at = CURRENT_TIMESTAMP`
+
 // UpdateTrack persists the mutable fields of a track.
 func (s *Store) UpdateTrack(t *Track) error {
 	_, err := s.db.Exec(`

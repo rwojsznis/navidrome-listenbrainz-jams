@@ -76,3 +76,50 @@ func TestPlaylistAndTrackLifecycle(t *testing.T) {
 		t.Errorf("expected 0 active after done, got %d", len(active))
 	}
 }
+
+func TestRetryReactivatesPlaylist(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	p, _ := db.UpsertPlaylist("feed", "e1", "PL", "u")
+	_ = db.UpsertTrack(p.ID, 1, "m1", "A", "T1")
+	_ = db.UpsertTrack(p.ID, 2, "m2", "B", "T2")
+
+	// Mark both missing with spent attempts, and the playlist done.
+	tracks, _ := db.TracksFor(p.ID)
+	for i := range tracks {
+		tracks[i].Status = TrackMissing
+		tracks[i].Attempts = 5
+		tracks[i].LastError = "no slskd candidate"
+		_ = db.UpdateTrack(&tracks[i])
+	}
+	_ = db.SetPlaylistStatus(p.ID, PlaylistDone)
+
+	// RetryMissing should reset both and reactivate the playlist.
+	n, err := db.RetryMissing(p.ID)
+	if err != nil || n != 2 {
+		t.Fatalf("RetryMissing n=%d err=%v", n, err)
+	}
+	reloaded, _ := db.TracksFor(p.ID)
+	for _, tr := range reloaded {
+		if tr.Status != TrackPending || tr.Attempts != 0 || tr.LastError != "" {
+			t.Errorf("track not reset: %+v", tr)
+		}
+	}
+	pl, _ := db.PlaylistByID(p.ID)
+	if pl.Status != PlaylistPending {
+		t.Errorf("playlist not reactivated: %s", pl.Status)
+	}
+
+	// RetryTrack on a single track returns its playlist id.
+	plID, err := db.RetryTrack(reloaded[0].ID)
+	if err != nil || plID != p.ID {
+		t.Fatalf("RetryTrack plID=%d err=%v", plID, err)
+	}
+	if _, err := db.RetryTrack(99999); err != nil {
+		t.Errorf("RetryTrack(missing) should be nil err, got %v", err)
+	}
+}
