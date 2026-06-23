@@ -1,0 +1,186 @@
+// Package downloader implements the slskd-backed download step of the pipeline.
+// It advances a not-in-Navidrome track across ticks: search slskd -> enqueue the
+// best candidate -> poll the transfer -> move the completed file into the library
+// -> request a rescan. It satisfies pipeline.Downloader.
+package downloader
+
+import (
+	"context"
+	"log/slog"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/files"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/slskd"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
+)
+
+// searchTimeout is how long slskd gathers responses before completing a search.
+const searchTimeout = 15 * time.Second
+
+// maxEnqueueAttempts caps how many ranked candidates we try per track per pass
+// before giving up for this tick (each failed enqueue can take ~10s in slskd).
+const maxEnqueueAttempts = 5
+
+// Downloader drives slskd downloads for tracks missing from Navidrome.
+type Downloader struct {
+	slskd *slskd.Client
+	cfg   *config.Config
+	log   *slog.Logger
+
+	mu          sync.Mutex
+	pendingScan bool
+}
+
+// New returns a Downloader.
+func New(client *slskd.Client, cfg *config.Config, log *slog.Logger) *Downloader {
+	return &Downloader{slskd: client, cfg: cfg, log: log}
+}
+
+// ConsumeScan reports whether a file was imported since the last call and resets
+// the flag. The caller triggers a single Navidrome rescan per tick when true.
+func (d *Downloader) ConsumeScan() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	v := d.pendingScan
+	d.pendingScan = false
+	return v
+}
+
+func (d *Downloader) markScan() {
+	d.mu.Lock()
+	d.pendingScan = true
+	d.mu.Unlock()
+}
+
+// Advance moves a single track one step through the download state machine.
+// It mutates t in place and returns whether t changed (so the caller persists it).
+func (d *Downloader) Advance(ctx context.Context, t *store.Track) (bool, error) {
+	switch t.Status {
+	case store.TrackDownloading:
+		return d.poll(ctx, t)
+	case store.TrackDownloaded, store.TrackImported:
+		// Moved already; waiting for the rescan + re-resolve in the pipeline.
+		return false, nil
+	default: // pending or missing: try to (re)start a download
+		return d.start(ctx, t)
+	}
+}
+
+// start searches slskd and enqueues the best candidate.
+func (d *Downloader) start(ctx context.Context, t *store.Track) (bool, error) {
+	if t.Attempts >= d.cfg.Download.MaxRetries {
+		// Give up searching; leave it missing for a future manual/seeded fix.
+		if t.Status != store.TrackMissing {
+			t.Status = store.TrackMissing
+			return true, nil
+		}
+		return false, nil
+	}
+
+	query := t.Artist + " " + t.Title
+	responses, err := d.slskd.SearchAndWait(ctx, query, searchTimeout)
+	if err != nil {
+		return false, err
+	}
+	ranked := slskd.Rank(responses, slskd.Criteria{
+		FormatPreference: d.cfg.Download.FormatPreference,
+		MinBitrate:       d.cfg.Download.MinBitrate,
+	}, slskd.Target{Artist: t.Artist, Title: t.Title})
+	if len(ranked) == 0 {
+		t.Attempts++
+		t.Status = store.TrackMissing
+		t.LastError = "no slskd candidate"
+		return true, nil
+	}
+
+	// Many Soulseek peers are unreachable (enqueue returns a connection/timeout
+	// error). Try candidates in ranked order until one accepts the download.
+	var lastErr error
+	for i, cand := range ranked {
+		if i >= maxEnqueueAttempts {
+			break
+		}
+		err := d.slskd.Enqueue(ctx, cand.Username, []slskd.QueueFile{{Filename: cand.File.Filename, Size: cand.File.Size}})
+		if err != nil {
+			lastErr = err
+			d.log.Debug("enqueue failed, trying next candidate", "track", t.Title, "user", cand.Username, "err", err)
+			continue
+		}
+		t.SlskdUsername = cand.Username
+		t.SlskdFile = cand.File.Filename
+		t.Status = store.TrackDownloading
+		t.LastError = ""
+		d.log.Info("download enqueued", "track", t.Title, "user", cand.Username, "file", files.BaseName(cand.File.Filename))
+		return true, nil
+	}
+
+	t.Attempts++
+	t.Status = store.TrackMissing
+	if lastErr != nil {
+		t.LastError = "all enqueues failed: " + lastErr.Error()
+	}
+	return true, nil
+}
+
+// poll checks the transfer state and imports the file once it succeeds.
+func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
+	// Timeout guard: if a download hasn't progressed within the budget, abandon
+	// it and let it be retried (re-searched) on a later tick.
+	if !t.UpdatedAt.IsZero() && time.Since(t.UpdatedAt) > d.cfg.Download.PerTrackTimeout {
+		d.log.Warn("download timed out", "track", t.Title)
+		return d.fail(t, "download timeout"), nil
+	}
+
+	transfer, found, err := d.slskd.FindDownload(ctx, t.SlskdUsername, t.SlskdFile)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		// Transfer record gone (e.g. cleared). Re-search next tick.
+		return d.fail(t, "transfer not found"), nil
+	}
+	if !transfer.IsComplete() {
+		return false, nil // still in progress
+	}
+	if !transfer.Succeeded() {
+		d.log.Warn("download failed", "track", t.Title, "state", transfer.State)
+		return d.fail(t, "download state: "+transfer.State), nil
+	}
+
+	// Completed: locate the file on disk by basename and move it into the library.
+	base := files.BaseName(t.SlskdFile)
+	src, ok, err := files.FindByBasename(d.cfg.Paths.SlskdDownloads, base)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		// Transfer says done but file not visible yet; try again next tick.
+		d.log.Warn("completed download not found on disk yet", "file", base)
+		return false, nil
+	}
+	dstDir := filepath.Join(d.cfg.Paths.NavidromeMusic, d.cfg.Paths.ImportSubdir)
+	imported, err := files.Move(src, dstDir)
+	if err != nil {
+		return false, err
+	}
+	t.ImportedPath = imported
+	t.Status = store.TrackDownloaded
+	t.LastError = ""
+	d.markScan()
+	d.log.Info("imported download", "track", t.Title, "path", imported)
+	return true, nil
+}
+
+// fail records a failed attempt and resets the track so it is re-searched, or
+// marks it missing once retries are exhausted.
+func (d *Downloader) fail(t *store.Track, reason string) bool {
+	t.Attempts++
+	t.LastError = reason
+	t.SlskdUsername = ""
+	t.SlskdFile = ""
+	t.Status = store.TrackMissing
+	return true
+}

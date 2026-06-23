@@ -31,11 +31,17 @@ services:
     container_name: nlj-slskd
     ports:
       - "5030:5030"
+      # Soulseek listening port for incoming peer connections. Must be reachable
+      # for searches to return results and for downloads to work. On a NAS,
+      # forward this port on your router too for best connectivity.
+      - "50300:50300"
     environment:
       # Soulseek network credentials. Put real values in deploy/.env (gitignored)
       # to let slskd actually connect, search, and download.
       SLSKD_SLSK_USERNAME: ${SLSKD_SLSK_USERNAME:-}
       SLSKD_SLSK_PASSWORD: ${SLSKD_SLSK_PASSWORD:-}
+      # Expose the API docs at /swagger (dev convenience).
+      SLSKD_SWAGGER: "true"
     volumes:
       - ./slskd/slskd.yml:/app/slskd.yml:ro
       - ../data/slskd:/app

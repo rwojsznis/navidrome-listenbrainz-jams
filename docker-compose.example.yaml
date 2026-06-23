@@ -1,0 +1,31 @@
+# Example deployment of navidrome-listenbrainz-jams alongside EXISTING Navidrome
+# and slskd instances (e.g. on a NAS). Adjust paths, image, and network.
+#
+# The service needs to reach Navidrome and slskd over HTTP (set their URLs in
+# config.yaml) and share two filesystem locations with them:
+#   - Navidrome's music library  -> mounted read-write (imports land here)
+#   - slskd's completed downloads -> mounted read-only (files are read+moved out)
+
+services:
+  navidrome-lb-jams:
+    # Build locally, or push to a registry and reference the image.
+    build: .
+    # image: ghcr.io/rwojsznis/navidrome-listenbrainz-jams:latest
+    container_name: navidrome-lb-jams
+    restart: unless-stopped
+    environment:
+      # Secrets referenced via ${ENV} in config.yaml.
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
+      EMQ_NAVIDROME_PASS: ${EMQ_NAVIDROME_PASS}
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./state:/data                                  # persists state.db
+      - /volume1/music:/music                          # SAME dir Navidrome scans
+      - /volume1/docker/slskd/downloads:/downloads:ro  # slskd completed downloads
+    # If Navidrome/slskd run in Docker, put this service on their network so it
+    # can reach them by service name; otherwise use the NAS host IP in config.yaml.
+    # networks: [media]
+
+# networks:
+#   media:
+#     external: true
