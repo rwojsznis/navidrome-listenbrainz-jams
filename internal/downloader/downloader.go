@@ -8,11 +8,11 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/files"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/navidrome"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/slskd"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
 )
@@ -24,35 +24,36 @@ const searchTimeout = 15 * time.Second
 // before giving up for this tick (each failed enqueue can take ~10s in slskd).
 const maxEnqueueAttempts = 5
 
+// scanThrottle dedupes the rescans triggered when several files import (or
+// several downloaded tracks await indexing) within a short window.
+const scanThrottle = 10 * time.Second
+
 // Downloader drives slskd downloads for tracks missing from Navidrome.
 type Downloader struct {
 	slskd *slskd.Client
+	scan  *navidrome.Client // admin-capable client used to trigger library scans
 	cfg   *config.Config
 	log   *slog.Logger
 
-	mu          sync.Mutex
-	pendingScan bool
+	lastScan time.Time
 }
 
-// New returns a Downloader.
-func New(client *slskd.Client, cfg *config.Config, log *slog.Logger) *Downloader {
-	return &Downloader{slskd: client, cfg: cfg, log: log}
+// New returns a Downloader. scan is a Navidrome client used to trigger library
+// rescans after imports (must be admin-capable).
+func New(client *slskd.Client, scan *navidrome.Client, cfg *config.Config, log *slog.Logger) *Downloader {
+	return &Downloader{slskd: client, scan: scan, cfg: cfg, log: log}
 }
 
-// ConsumeScan reports whether a file was imported since the last call and resets
-// the flag. The caller triggers a single Navidrome rescan per tick when true.
-func (d *Downloader) ConsumeScan() bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	v := d.pendingScan
-	d.pendingScan = false
-	return v
-}
-
-func (d *Downloader) markScan() {
-	d.mu.Lock()
-	d.pendingScan = true
-	d.mu.Unlock()
+// triggerScan asks Navidrome to rescan, throttled so a burst of imports doesn't
+// fire many scans. Ticks are single-threaded, so no locking is needed.
+func (d *Downloader) triggerScan(ctx context.Context) {
+	if !d.lastScan.IsZero() && time.Since(d.lastScan) < scanThrottle {
+		return
+	}
+	d.lastScan = time.Now()
+	if err := d.scan.StartScan(ctx); err != nil {
+		d.log.Warn("trigger rescan", "err", err)
+	}
 }
 
 // Advance moves a single track one step through the download state machine.
@@ -62,7 +63,9 @@ func (d *Downloader) Advance(ctx context.Context, t *store.Track) (bool, error) 
 	case store.TrackDownloading:
 		return d.poll(ctx, t)
 	case store.TrackDownloaded, store.TrackImported:
-		// Moved already; waiting for the rescan + re-resolve in the pipeline.
+		// File is in the library but not yet found in Navidrome. Ensure a rescan
+		// so a later resolve pass can pick it up. No state change here.
+		d.triggerScan(ctx)
 		return false, nil
 	default: // pending or missing: try to (re)start a download
 		return d.start(ctx, t)
@@ -169,7 +172,7 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	t.ImportedPath = imported
 	t.Status = store.TrackDownloaded
 	t.LastError = ""
-	d.markScan()
+	d.triggerScan(ctx)
 	d.log.Info("imported download", "track", t.Title, "path", imported)
 	return true, nil
 }

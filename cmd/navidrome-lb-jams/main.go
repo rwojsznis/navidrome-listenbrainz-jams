@@ -44,8 +44,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Library rescans (Subsonic startScan) require an admin-capable user, so we
+	// use the first feed's credentials.
+	scanClient := navidrome.New(cfg.Navidrome.URL, cfg.Feeds[0].NavidromeUser, cfg.Feeds[0].NavidromePass)
 	pipe := pipeline.New(st, cfg, logger)
-	dl := downloader.New(slskd.New(cfg.Slskd.URL, cfg.Slskd.APIKey), cfg, logger)
+	dl := downloader.New(slskd.New(cfg.Slskd.URL, cfg.Slskd.APIKey), scanClient, cfg, logger)
 	pipe.SetDownloader(dl)
 
 	app := &app{
@@ -53,10 +56,6 @@ func main() {
 		store: st,
 		lb:    listenbrainz.NewClient(),
 		pipe:  pipe,
-		dl:    dl,
-		// A rescan is triggered after imports; Subsonic startScan requires an
-		// admin-capable user, so we use the first feed's credentials.
-		scanClient: navidrome.New(cfg.Navidrome.URL, cfg.Feeds[0].NavidromeUser, cfg.Feeds[0].NavidromePass),
 	}
 
 	if *once {
@@ -80,12 +79,10 @@ func main() {
 }
 
 type app struct {
-	cfg        *config.Config
-	store      *store.Store
-	lb         *listenbrainz.Client
-	pipe       *pipeline.Pipeline
-	dl         *downloader.Downloader
-	scanClient *navidrome.Client
+	cfg   *config.Config
+	store *store.Store
+	lb    *listenbrainz.Client
+	pipe  *pipeline.Pipeline
 }
 
 // tick performs one pass: discover new playlists from feeds and (later) advance
@@ -94,15 +91,6 @@ func (a *app) tick(ctx context.Context) {
 	slog.Info("tick: start")
 	a.discover(ctx)
 	a.pipe.Run(ctx)
-	// One debounced rescan per tick if any download was imported, so the next
-	// tick can resolve the newly-indexed tracks into their playlists.
-	if a.dl.ConsumeScan() {
-		if err := a.scanClient.StartScan(ctx); err != nil {
-			slog.Error("trigger rescan", "err", err)
-		} else {
-			slog.Info("triggered navidrome rescan after imports")
-		}
-	}
 	slog.Info("tick: done")
 }
 

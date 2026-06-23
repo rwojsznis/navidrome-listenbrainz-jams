@@ -24,6 +24,10 @@ type Downloader interface {
 	Advance(ctx context.Context, t *store.Track) (changed bool, err error)
 }
 
+// maxNewDownloadsPerTick caps how many fresh slskd searches a single playlist
+// starts per tick, so ticks stay short and the import/backfill cycle is frequent.
+const maxNewDownloadsPerTick = 5
+
 // Pipeline orchestrates assembly across all feeds/playlists.
 type Pipeline struct {
 	store      *store.Store
@@ -84,7 +88,9 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 			t.Status = store.TrackExists
 			continue
 		}
-		if t.Status == store.TrackDownloading || t.Status == store.TrackDownloaded {
+		// Downloading tracks aren't in the library yet; everything else
+		// (including freshly imported "downloaded" tracks) is worth resolving.
+		if t.Status == store.TrackDownloading {
 			continue
 		}
 		if song, ok := p.resolve(ctx, client, t); ok {
@@ -161,25 +167,38 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 		}
 	}
 
-	// 5. Download pass: for tracks still missing from Navidrome, advance the
-	//    slskd download state machine (search -> enqueue -> poll -> import).
+	// 5. Download pass: poll in-flight downloads and import completed ones every
+	//    tick (cheap), but cap NEW slskd searches per tick so a playlist with
+	//    many missing tracks doesn't make a single tick run for many minutes —
+	//    keeping the resolve/import/backfill cycle responsive.
+	newSearches := 0
 	for i := range tracks {
 		t := &tracks[i]
 		if t.Status == store.TrackInPlaylist || t.Status == store.TrackExists || t.NavidromeSongID != "" {
 			continue
 		}
-		if p.downloader != nil {
-			changed, derr := p.downloader.Advance(ctx, t)
-			if derr != nil {
-				p.log.Warn("download advance", "track", t.Title, "err", derr)
-			}
-			if changed {
+		if p.downloader == nil {
+			if t.Status != store.TrackMissing {
+				t.Status = store.TrackMissing
 				if err := p.store.UpdateTrack(t); err != nil {
 					return err
 				}
 			}
-		} else if t.Status != store.TrackMissing {
-			t.Status = store.TrackMissing
+			continue
+		}
+		// pending/missing need a fresh (slow) slskd search; bound those per tick.
+		// downloading/downloaded are only polled/rescanned, which is cheap.
+		if t.Status == store.TrackPending || t.Status == store.TrackMissing {
+			if newSearches >= maxNewDownloadsPerTick {
+				continue
+			}
+			newSearches++
+		}
+		changed, derr := p.downloader.Advance(ctx, t)
+		if derr != nil {
+			p.log.Warn("download advance", "track", t.Title, "err", derr)
+		}
+		if changed {
 			if err := p.store.UpdateTrack(t); err != nil {
 				return err
 			}
