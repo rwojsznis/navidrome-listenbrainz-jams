@@ -5,6 +5,24 @@ directories:
   downloads: /downloads
   incomplete: /incomplete
 
+# Auto-purge old records as a backstop. The service already removes its own
+# searches and completed/failed transfers, so this mainly covers anything it
+# misses (e.g. while the service is down). Values are in MINUTES.
+# NOTE: keep download.succeeded generous — the service imports the file FROM the
+# completed transfer record, so purging it too soon (before an import) would make
+# the service re-download. Do NOT set files.complete: the service moves completed
+# files out itself; auto-deleting them risks losing a file it hasn't imported yet.
+retention:
+  search: 60                # remove searches an hour after completion
+  transfers:
+    download:
+      succeeded: 4320       # 3 days (backstop; service removes these on import)
+      errored: 1440         # 1 day
+      cancelled: 1440       # 1 day
+      failed: 1440          # 1 day
+  files:
+    incomplete: 1440        # clean up stuck partial downloads after a day
+
 # Don't share anything from this dev instance.
 shares:
   directories: []

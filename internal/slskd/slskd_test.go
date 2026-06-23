@@ -90,6 +90,43 @@ func TestFindDownload(t *testing.T) {
 	}
 }
 
+func TestRemoveSearch(t *testing.T) {
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "k")
+
+	if err := c.RemoveSearch(context.Background(), "sid"); err != nil {
+		t.Fatalf("RemoveSearch: %v", err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/api/v0/searches/sid" {
+		t.Errorf("got %s %s, want DELETE /api/v0/searches/sid", gotMethod, gotPath)
+	}
+}
+
+func TestRemoveDownload(t *testing.T) {
+	var gotMethod, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "k")
+
+	if err := c.RemoveDownload(context.Background(), "bob", "t1"); err != nil {
+		t.Fatalf("RemoveDownload: %v", err)
+	}
+	if gotMethod != http.MethodDelete {
+		t.Errorf("method = %s, want DELETE", gotMethod)
+	}
+	if gotPath != "/api/v0/transfers/downloads/bob/t1" {
+		t.Errorf("path = %s", gotPath)
+	}
+}
+
 func TestTransferStateHelpers(t *testing.T) {
 	cases := map[string][2]bool{ // state -> {IsComplete, Succeeded}
 		"InProgress":            {false, false},

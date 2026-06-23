@@ -165,18 +165,32 @@ func (c *Client) GetResponses(ctx context.Context, id string) ([]SearchResponse,
 	return r, nil
 }
 
+// RemoveSearch deletes a search record from slskd. slskd retains searches until
+// removed, so we delete each one after reading its responses to keep the list
+// from growing unbounded.
+func (c *Client) RemoveSearch(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodDelete, "/api/v0/searches/"+url.PathEscape(id), nil, nil)
+}
+
 // SearchAndWait runs a search and polls until it completes, then returns the
-// responses. slskd only serves /responses once a search reaches the Completed
-// state, and a busy search (popular track, many peers) stays InProgress well
-// past searchTimeout while responses trickle in — so we must wait for
-// completion, not just for searchTimeout to elapse. maxWait is a generous hard
-// cap so a never-completing search can't hang a tick forever; on hitting it we
-// return whatever is available (possibly empty).
+// responses and removes the search record. slskd only serves /responses once a
+// search reaches the Completed state, and a busy search (popular track, many
+// peers) stays InProgress well past searchTimeout while responses trickle in —
+// so we must wait for completion, not just for searchTimeout to elapse. maxWait
+// is a generous hard cap so a never-completing search can't hang a tick forever;
+// on hitting it we return whatever is available (possibly empty).
 func (c *Client) SearchAndWait(ctx context.Context, text string, searchTimeout time.Duration) ([]SearchResponse, error) {
 	id, err := c.StartSearch(ctx, text, searchTimeout)
 	if err != nil {
 		return nil, err
 	}
+	// Read responses then delete the search record (best-effort cleanup).
+	finish := func() ([]SearchResponse, error) {
+		resp, err := c.GetResponses(ctx, id)
+		_ = c.RemoveSearch(ctx, id)
+		return resp, err
+	}
+
 	maxWait := searchTimeout + 75*time.Second
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -187,14 +201,14 @@ func (c *Client) SearchAndWait(ctx context.Context, text string, searchTimeout t
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-deadline.C:
-			return c.GetResponses(ctx, id)
+			return finish()
 		case <-ticker.C:
 			s, err := c.GetSearch(ctx, id)
 			if err != nil {
 				return nil, err
 			}
 			if s.IsComplete {
-				return c.GetResponses(ctx, id)
+				return finish()
 			}
 		}
 	}
@@ -213,6 +227,15 @@ func (c *Client) ListDownloads(ctx context.Context) ([]userDownloads, error) {
 		return nil, err
 	}
 	return u, nil
+}
+
+// RemoveDownload removes a download transfer record from slskd (e.g. a completed
+// one after its file has been imported, or an abandoned failed one). slskd does
+// not auto-purge transfers by default, so this keeps its list from growing
+// unbounded. The file itself is unaffected (we've already moved it out).
+func (c *Client) RemoveDownload(ctx context.Context, username, id string) error {
+	path := "/api/v0/transfers/downloads/" + url.PathEscape(username) + "/" + url.PathEscape(id)
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
 }
 
 // FindDownload locates a download transfer by username and remote filename.

@@ -165,6 +165,10 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	}
 	if !transfer.Succeeded() {
 		d.log.Warn("download failed", "track", t.Title, "state", transfer.State)
+		// Drop the failed record so slskd's list doesn't accumulate dead entries.
+		if err := d.slskd.RemoveDownload(ctx, t.SlskdUsername, transfer.ID); err != nil {
+			d.log.Debug("remove failed transfer", "track", t.Title, "err", err)
+		}
 		return d.fail(t, "download state: "+transfer.State), nil
 	}
 
@@ -194,6 +198,11 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	t.ImportedPath = imported
 	t.Status = store.TrackDownloaded
 	t.LastError = ""
+	// Remove the now-imported transfer from slskd's list (best-effort; the file
+	// is already moved, so this only clears the record).
+	if err := d.slskd.RemoveDownload(ctx, t.SlskdUsername, transfer.ID); err != nil {
+		d.log.Debug("remove completed transfer", "track", t.Title, "err", err)
+	}
 	d.triggerScan(ctx)
 	d.log.Info("imported download", "track", t.Title, "path", imported)
 	return true, nil
