@@ -1,0 +1,178 @@
+// Package config loads and validates the service configuration from a YAML
+// file. String values support ${ENV} / ${ENV:-default} interpolation so secrets
+// can be supplied via environment variables instead of being stored in plaintext.
+package config
+
+import (
+	"fmt"
+	"os"
+	"regexp"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config is the top-level configuration loaded from the mounted YAML file.
+type Config struct {
+	PollInterval time.Duration `yaml:"poll_interval"`
+	Navidrome    Navidrome     `yaml:"navidrome"`
+	Slskd        Slskd         `yaml:"slskd"`
+	Paths        Paths         `yaml:"paths"`
+	Download     Download      `yaml:"download"`
+	Matching     Matching      `yaml:"matching"`
+	State        State         `yaml:"state"`
+	Feeds        []Feed        `yaml:"feeds"`
+}
+
+// Navidrome holds connection details for the Navidrome (Subsonic) instance.
+type Navidrome struct {
+	URL string `yaml:"url"`
+}
+
+// Slskd holds connection details for the slskd instance.
+type Slskd struct {
+	URL    string `yaml:"url"`
+	APIKey string `yaml:"api_key"`
+}
+
+// Paths describes the filesystem locations the service mounts and moves between.
+type Paths struct {
+	// SlskdDownloads is slskd's completed-downloads directory (read).
+	SlskdDownloads string `yaml:"slskd_downloads"`
+	// NavidromeMusic is the root of Navidrome's music library (write).
+	NavidromeMusic string `yaml:"navidrome_music"`
+	// ImportSubdir is the subfolder under NavidromeMusic where imported files land.
+	ImportSubdir string `yaml:"import_subdir"`
+}
+
+// Download controls how candidate files are selected and retried on slskd.
+type Download struct {
+	FormatPreference []string      `yaml:"format_preference"`
+	MinBitrate       int           `yaml:"min_bitrate"`
+	PerTrackTimeout  time.Duration `yaml:"per_track_timeout"`
+	MaxRetries       int           `yaml:"max_retries"`
+}
+
+// Matching controls fuzzy matching of search results to feed tracks.
+type Matching struct {
+	FuzzyThreshold float64 `yaml:"fuzzy_threshold"`
+}
+
+// State controls the persistent state store.
+type State struct {
+	DBPath string `yaml:"db_path"`
+}
+
+// Feed is a single ListenBrainz RSS source mapped to a Navidrome user.
+type Feed struct {
+	Name          string `yaml:"name"`
+	RSSURL        string `yaml:"rss_url"`
+	NavidromeUser string `yaml:"navidrome_user"`
+	NavidromePass string `yaml:"navidrome_pass"`
+}
+
+// Default values applied when fields are omitted from the YAML.
+var defaults = Config{
+	PollInterval: 30 * time.Minute,
+	Paths:        Paths{ImportSubdir: "weekly-jams"},
+	Download: Download{
+		FormatPreference: []string{"flac", "mp3"},
+		MinBitrate:       256,
+		PerTrackTimeout:  2 * time.Hour,
+		MaxRetries:       3,
+	},
+	Matching: Matching{FuzzyThreshold: 0.85},
+	State:    State{DBPath: "/data/state.db"},
+}
+
+// Load reads, interpolates, parses and validates the config file at path.
+func Load(path string) (*Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	interpolated, err := interpolate(string(raw))
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := defaults
+	if err := yaml.Unmarshal([]byte(interpolated), &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// envPattern matches ${NAME} and ${NAME:-default}.
+var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
+
+// interpolate replaces ${ENV} / ${ENV:-default} references with environment
+// values. An unset variable with no default is an error so misconfiguration
+// fails loudly instead of silently injecting an empty secret.
+func interpolate(s string) (string, error) {
+	var missing []string
+	out := envPattern.ReplaceAllStringFunc(s, func(match string) string {
+		groups := envPattern.FindStringSubmatch(match)
+		name := groups[1]
+		hasDefault := groups[2] != ""
+		def := groups[3]
+		if val, ok := os.LookupEnv(name); ok {
+			return val
+		}
+		if hasDefault {
+			return def
+		}
+		missing = append(missing, name)
+		return match
+	})
+	if len(missing) > 0 {
+		return "", fmt.Errorf("config references unset environment variables: %v", missing)
+	}
+	return out, nil
+}
+
+func (c *Config) validate() error {
+	if c.Navidrome.URL == "" {
+		return fmt.Errorf("navidrome.url is required")
+	}
+	if c.Slskd.URL == "" {
+		return fmt.Errorf("slskd.url is required")
+	}
+	if c.Slskd.APIKey == "" {
+		return fmt.Errorf("slskd.api_key is required")
+	}
+	if c.Paths.SlskdDownloads == "" {
+		return fmt.Errorf("paths.slskd_downloads is required")
+	}
+	if c.Paths.NavidromeMusic == "" {
+		return fmt.Errorf("paths.navidrome_music is required")
+	}
+	if len(c.Feeds) == 0 {
+		return fmt.Errorf("at least one feed is required")
+	}
+	seen := make(map[string]bool)
+	for i, f := range c.Feeds {
+		if f.Name == "" {
+			return fmt.Errorf("feeds[%d].name is required", i)
+		}
+		if seen[f.Name] {
+			return fmt.Errorf("duplicate feed name %q", f.Name)
+		}
+		seen[f.Name] = true
+		if f.RSSURL == "" {
+			return fmt.Errorf("feeds[%d] (%s): rss_url is required", i, f.Name)
+		}
+		if f.NavidromeUser == "" {
+			return fmt.Errorf("feeds[%d] (%s): navidrome_user is required", i, f.Name)
+		}
+		if f.NavidromePass == "" {
+			return fmt.Errorf("feeds[%d] (%s): navidrome_pass is required", i, f.Name)
+		}
+	}
+	return nil
+}

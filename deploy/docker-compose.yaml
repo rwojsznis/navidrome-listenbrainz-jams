@@ -1,0 +1,44 @@
+name: navidrome-lb-jams-dev
+
+# Local development stack: a Navidrome instance and a slskd instance for the
+# service to talk to. The service itself is run on the host with `go run` during
+# development (pointing at the published ports below), so it can be rebuilt
+# quickly without rebuilding an image. See deploy/README.md.
+#
+# Paths under ../data are bind-mounted so the host-run service can read slskd's
+# completed downloads and write into Navidrome's music library, exactly as the
+# real deployment would via shared volumes.
+
+services:
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: nlj-navidrome
+    ports:
+      - "4533:4533"
+    environment:
+      ND_LOGLEVEL: info
+      # Disable scheduled scanning; the service triggers scans explicitly after
+      # importing files so we control timing during the assembly step.
+      ND_SCANSCHEDULE: "0"
+      ND_SESSIONTIMEOUT: 24h
+    volumes:
+      - ../data/music:/music
+      - ../data/navidrome:/data
+    restart: unless-stopped
+
+  slskd:
+    image: slskd/slskd:latest
+    container_name: nlj-slskd
+    ports:
+      - "5030:5030"
+    environment:
+      # Soulseek network credentials. Put real values in deploy/.env (gitignored)
+      # to let slskd actually connect, search, and download.
+      SLSKD_SLSK_USERNAME: ${SLSKD_SLSK_USERNAME:-}
+      SLSKD_SLSK_PASSWORD: ${SLSKD_SLSK_PASSWORD:-}
+    volumes:
+      - ./slskd/slskd.yml:/app/slskd.yml:ro
+      - ../data/slskd:/app
+      - ../data/downloads:/downloads
+      - ../data/incomplete:/incomplete
+    restart: unless-stopped

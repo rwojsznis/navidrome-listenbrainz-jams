@@ -1,0 +1,43 @@
+# navidrome-listenbrainz-jams configuration.
+# String values support ${ENV} and ${ENV:-default} interpolation, so secrets can
+# be supplied via environment variables instead of being committed in plaintext.
+
+# How often the daemon re-checks feeds and advances in-progress playlists.
+poll_interval: 30m
+
+navidrome:
+  url: http://navidrome:4533
+
+slskd:
+  url: http://slskd:5030
+  api_key: ${SLSKD_API_KEY}
+
+paths:
+  # slskd's completed-downloads directory (read by this service).
+  slskd_downloads: /downloads
+  # Root of Navidrome's music library (written by this service).
+  navidrome_music: /music
+  # Subfolder under navidrome_music where imported files are placed.
+  import_subdir: weekly-jams
+
+download:
+  # Preference order when picking a candidate from slskd search results.
+  format_preference: [flac, mp3]
+  min_bitrate: 256
+  per_track_timeout: 2h
+  max_retries: 3
+
+matching:
+  # Minimum normalized similarity (0..1) to accept a search hit as a match.
+  fuzzy_threshold: 0.85
+
+state:
+  db_path: /data/state.db
+
+# One entry per ListenBrainz RSS feed. Multiple feeds and multiple users are
+# supported; each feed's playlist is created owned by its navidrome_user.
+feeds:
+  - name: emq-weekly-jams
+    rss_url: "https://listenbrainz.org/syndication-feed/user/emq/recommendations?recommendation_type=weekly-jams"
+    navidrome_user: emq
+    navidrome_pass: ${EMQ_NAVIDROME_PASS}

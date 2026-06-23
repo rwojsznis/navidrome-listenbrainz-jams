@@ -1,0 +1,525 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+  <id>https://listenbrainz.org/syndication-feed/user/emq/recommendations/weekly-jams</id>
+  <title>Weekly Jams for emq - ListenBrainz</title>
+  <updated>2026-06-23T16:23:15.521082+00:00</updated>
+  <author>
+    <name>ListenBrainz</name>
+  </author>
+  <link href="https://listenbrainz.org/playlist/?path=6e3ac1a6-7b3f-4f89-877c-d82c4e76dbc2" rel="self"/>
+  <link href="https://listenbrainz.org/syndication-feed/user/emq/recommendations/weekly-jams" rel="alternate"/>
+  <generator uri="https://lkiesow.github.io/python-feedgen" version="1.0.0">python-feedgen</generator>
+  <logo>https://listenbrainz.org/static/img/listenbrainz_logo_icon.svg</logo>
+  <entry>
+    <id>https://listenbrainz.org/syndication-feed/user/emq/recommendations/weekly-jams/1782087110.207408</id>
+    <title>Weekly Jams for emq, week of 2026-06-22 Mon</title>
+    <updated>2026-06-22T00:11:50.207408+00:00</updated>
+    <content type="html">&lt;p&gt;
+    &lt;ul&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/dd5725e1-62dc-4ae4-b91b-db80660bc452"&gt;Army Dreamers&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//4b585938-f271-45e2-b19a-91c634b5e396"&gt;Kate Bush&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/0c846a8e-debd-4a63-bb93-6c57f5178b45"&gt;vampire&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//6925db17-f35e-42f3-a4eb-84ee6bf5d4b0"&gt;Olivia Rodrigo&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/eb98e130-b446-4e38-870d-820bb3f3d0fc"&gt;Narcotic&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//5b7b9817-f937-48a6-b194-cb2b7e4084a3"&gt;Liquido&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/47b7339f-8f7e-432e-acf1-8cb6b53a3554"&gt;Chan Chan&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//2a85ecff-41e9-4be1-aca6-c87054a4c334"&gt;Buena Vista Social Club&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/dd1a0591-6e51-4b44-9ed0-54da032017fa"&gt;Behind Blue Eyes&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//8f9d6bb2-dba4-4cca-9967-cc02b9f4820c"&gt;Limp Bizkit&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/6544ac1d-0108-40ee-aa7a-b644ef7a3b46"&gt;Feel Good Inc.&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//e21857d5-3256-4547-afb3-4b6ded592596"&gt;Gorillaz&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/a5a2330e-2fff-4601-a715-6e68a8e98fbf"&gt;I’m Yours&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//82eb8936-7bf6-4577-8320-a2639465206d"&gt;Jason Mraz&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/170dfa5d-0235-446d-9f3d-d235c01abc91"&gt;Walking on a Dream&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//ac7e838c-3d95-47c2-92a9-81767ad7c217"&gt;Empire of the Sun&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/9160e42b-8fae-402d-9cee-d6826c5cce33"&gt;Everlong&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//67f66c07-6e61-4026-ade5-7e782fad3a5d"&gt;Foo Fighters&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/63d628c5-c48c-46c9-9b8e-8d795f6ed225"&gt;Free Bird&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//c544ed4d-2390-4442-a83e-1ea2883b09c8"&gt;Lynyrd Skynyrd&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/bc0e9d24-8b23-41ca-a389-3196e071c56e"&gt;Sinnerman&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//2944824d-4c26-476f-a981-be849081942f"&gt;Nina Simone&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/e4b347be-ecb2-44ff-aaa8-3d4c517d7ea5"&gt;Everybody Wants to Rule the World&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//7c7f9c94-dee8-4903-892b-6cf44652e2de"&gt;Tears for Fears&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/5f926e49-e0b8-4b45-8172-a1b9076d6b22"&gt;Lone Digger&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//72eabb1a-4d2c-4de6-90f2-671b2cada42b"&gt;Caravan Palace&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/0ae5ee0e-084e-458b-87ba-76cef24cfff3"&gt;Messy&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//43b896c5-5652-4b04-bde1-2e4224bc99b3"&gt;Lola Young&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/773a1557-a974-4f1e-978e-c240be4c3cb8"&gt;Intro&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//c5c2ea1c-4bde-4f4d-bd0b-47b200bf99d6"&gt;The xx&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/9128e802-502a-433b-8b31-78b3ddc31647"&gt;I Want to Know What Love Is&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//160629ab-ec18-4931-8c95-02cb92d06186"&gt;Foreigner&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/28b3c503-a01c-40a9-acff-bfc12f07e194"&gt;Please Please Please&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//1882fe91-cdd9-49c9-9956-8e06a3810bd4"&gt;Sabrina Carpenter&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/04cccd2b-bbac-4309-a367-94325fd0ef93"&gt;Royals&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//8e494408-8620-4c6a-82c2-c2ca4a1e4f12"&gt;Lorde&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/7e4c73e1-dc3a-4252-b7e1-3f6a4ca21c58"&gt;ceilings&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//ee0b11de-0c8a-4267-9886-198f4579e1db"&gt;Lizzy McAlpine&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/485bbe7f-d0f7-4ffe-8adb-0f1093dd2dbf"&gt;Come Together&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"&gt;The Beatles&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/5aa053a9-5b84-418f-bb3c-d61df67b3880"&gt;Bye Bye Bye&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//603ba565-3967-4be1-931e-9cb945394e86"&gt;*NSYNC&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/c0f89d6a-d740-4f91-b6e1-d5e8572268c1"&gt;Dance Monkey&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//663f33f4-8e5f-4773-93ea-493a1135de9a"&gt;Tones and I&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/729cf505-94eb-4fbe-bc76-cbae44cff091"&gt;Yellow&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//cc197bad-dc9c-440d-a5b5-d52ba2e14234"&gt;Coldplay&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/8b895c76-b459-470e-8636-14e51312e6f8"&gt;My Silver Lining&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//373faa02-74d7-4b1d-9b47-7574ad510f8d"&gt;First Aid Kit&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/02ba5d5a-ccbb-4e77-beb2-e6ba88ff39f9"&gt;Stayin’ Alive&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//bf0f7e29-dfe1-416c-b5c6-f9ebc19ea810"&gt;Bee Gees&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/70ac6733-068f-4613-b06b-bea17cfbcc30"&gt;Come as You Are&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//5b11f4ce-a62d-471e-81fc-a69a8278c7da"&gt;Nirvana&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/12f65dca-de8f-43fe-a65d-f12a02aaadf3"&gt;Take On Me&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//7364dea6-ca9a-48e3-be01-b44ad0d19897"&gt;a‐ha&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/bd6a4252-4b49-47b8-8cc9-0722c1d8fc93"&gt;The Passenger&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//f37b3f31-b1f8-4b88-8cb5-b34f709b17d7"&gt;Iggy Pop&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/b95f7baa-cc01-4f98-881f-90b575316298"&gt;Conceited&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//43b896c5-5652-4b04-bde1-2e4224bc99b3"&gt;Lola Young&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/560062d0-e122-46be-9d89-0f3b44077fdf"&gt;Mr. Brightside&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//95e1ead9-4d31-4808-a7ac-32c3614c116b"&gt;The Killers&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/e8f041cf-35a1-4405-a60b-284f20fb0f7f"&gt;Nothing Breaks Like a Heart&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//c3c82bdc-d9e7-4836-9746-c24ead47ca19"&gt;Mark Ronson feat. Miley Cyrus&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/272be1e2-9599-4b8d-b872-5e879881d103"&gt;Too Sweet&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//b4691384-50c3-4afd-9988-51d3ec5db65d"&gt;Hozier&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/c546d32b-03d9-4cc9-b7a0-bd039404d669"&gt;Jolene&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//1d543e07-d0d2-4834-a8db-d65c50c2a856"&gt;Dolly Parton&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/8f927b56-57e2-4583-9d3f-5a72f49df6dc"&gt;Tom&amp;#39;s Diner&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//65daba7b-f387-46cc-a0c8-d0191b099586"&gt;AnnenMayKantereit &amp;amp; Giant Rooks&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/bc33cda2-560d-4c13-84af-bd27cba29154"&gt;God Needs the Devil&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//357f5a24-1396-4b38-926d-c4bfeea1391b"&gt;Jonah Kagen&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/9dbd4c26-c4ad-4abe-ba3e-88bfe6750518"&gt;Locked Out of Heaven&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//afb680f2-b6eb-4cd7-a70b-a63b25c763d5"&gt;Bruno Mars&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/e896d106-8794-4fb4-8e38-595588a6b72e"&gt;Dust in the Wind&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//69689acf-d9cd-4d20-a972-47db4ed51b1a"&gt;Kansas&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/64b5f5d9-d7d4-4c70-87a7-2b30217108fd"&gt;All Night&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//fe1a873d-2000-4789-a895-4187fe756203"&gt;Parov Stelar&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/dbc96edd-eb82-481b-8654-47d445a2af62"&gt;Wonderland&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//72eabb1a-4d2c-4de6-90f2-671b2cada42b"&gt;Caravan Palace&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/0692129f-cfb5-4ca2-a2a5-e2c03251388f"&gt;Before I Forget&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//a466c2a2-6517-42fb-a160-1087c3bafd9f"&gt;Slipknot&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/121111fb-7f36-4032-b787-be21bc0bd46f"&gt;Must Be Together (original mix)&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//7846ff69-f748-4d3f-ac12-9d08312149d9"&gt;D‐Mad&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/09e57e08-f860-4e03-b773-1c6f995343d5"&gt;Daddy Cool&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//5403bf6e-bc1d-4e62-b31f-926a2bf66a14"&gt;Boney M.&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/44140ecd-ca40-4d45-8c3e-c4df35ca0462"&gt;Bette Davis Eyes&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//600c5212-a8e6-458e-bd3f-78b6fbfe329a"&gt;Kim Carnes&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/de10d477-5f22-4ea8-b5cb-52664261ea12"&gt;Lemon Tree&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//80c38d4f-7419-4ae9-8d4c-cf899df0d5cc"&gt;Fool’s Garden&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/d2c4c87c-844c-4212-83fb-174c775161a3"&gt;Familiar&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//e3c4c4af-f83b-4168-84cb-898009dd0447"&gt;Agnes Obel&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/5fee77c7-b18d-4320-b996-c3285d3251c6"&gt;Van Horn&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//5c2593bc-1621-4c4d-821b-b7bb6ff213b5"&gt;Saint Motel&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/f8030bcd-e6e4-48cb-ba0d-58b3a1132ad4"&gt;Sonne&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//b2d122f9-eadb-4930-a196-8f221eeb0c66"&gt;Rammstein&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/684ca01c-9775-42fe-9cdb-28fa37c27851"&gt;The Real Slim Shady&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//b95ce3ff-3d05-4e87-9e01-c97b66af13d4"&gt;Eminem&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/fe4d2582-d3c5-48ac-837d-678339826412"&gt;Fire&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//510fcf21-a1f3-40af-9087-40593af86f7f"&gt;Barns Courtney&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+        &lt;li&gt;
+            
+                &lt;a href="https://musicbrainz.org/recording/c5f78787-9f88-494c-acec-4bb43b6719cb"&gt;Providence&lt;/a&gt;
+            
+            by 
+            
+                &lt;a href="https://listenbrainz.org/artist//f0433178-6b43-4a2c-86e1-bbfeb296cdf1"&gt;Poor Man&amp;#39;s Poison&lt;/a&gt;
+            
+        &lt;/li&gt;
+        
+    &lt;/ul&gt;
+&lt;/p&gt;</content>
+    <link href="https://listenbrainz.org/playlist/?path=6e3ac1a6-7b3f-4f89-877c-d82c4e76dbc2"/>
+    <published>2026-06-22T00:11:50.207408+00:00</published>
+  </entry>
+</feed>

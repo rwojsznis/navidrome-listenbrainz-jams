@@ -1,0 +1,22 @@
+# slskd configuration for the local dev stack.
+# Docs: https://github.com/slskd/slskd/blob/master/docs/config.md
+
+directories:
+  downloads: /downloads
+  incomplete: /incomplete
+
+# Don't share anything from this dev instance.
+shares:
+  directories: []
+
+web:
+  # The service authenticates to slskd's REST API with this key (sent as the
+  # X-API-Key header). Matches `slskd.api_key` in config.local.yaml.
+  authentication:
+    api_keys:
+      navidrome-jams:
+        key: dev-slskd-api-key-change-me
+        cidr: 0.0.0.0/0,::/0
+
+# slsk.username / slsk.password are supplied via environment variables
+# (SLSKD_SLSK_USERNAME / SLSKD_SLSK_PASSWORD) in docker-compose.yaml.

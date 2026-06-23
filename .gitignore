@@ -1,0 +1,12 @@
+# Local dev data (Navidrome db, slskd db, music, downloads, state)
+/data/
+
+# Local dev config (may contain secrets)
+/config.local.yaml
+
+# Env file for docker-compose secrets
+/deploy/.env
+
+# Build output
+/navidrome-lb-jams
+/dist/
