@@ -182,7 +182,7 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	// Rename to a clean "<artist> - <title>.<ext>" from the feed metadata,
 	// instead of the uploader's arbitrary filename. (Navidrome indexes by tags,
 	// so this is purely for a tidy library on disk.)
-	dstDir := filepath.Join(d.cfg.Paths.NavidromeMusic, d.cfg.Paths.ImportSubdir)
+	dstDir := d.cfg.Paths.ImportDir
 	name := files.SanitizeFilename(t.Artist + " - " + t.Title)
 	if name != "" {
 		name += filepath.Ext(src)

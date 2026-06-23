@@ -13,12 +13,14 @@ slskd:
   api_key: ${SLSKD_API_KEY}
 
 paths:
-  # slskd's completed-downloads directory (read by this service).
+  # slskd's completed-downloads directory (mount read-only).
   slskd_downloads: /downloads
-  # Root of Navidrome's music library (written by this service).
-  navidrome_music: /music
-  # Subfolder under navidrome_music where imported files are placed.
-  import_subdir: weekly-jams
+  # Directory where imported files are written (mount read-write). It must be a
+  # subfolder of Navidrome's music library so Navidrome indexes the files — mount
+  # ONLY this folder, not the whole library, so the service can't touch anything
+  # else. E.g. host /volume1/music/lb-jams -> /import, Navidrome library at
+  # /volume1/music.
+  import_dir: /import
 
 download:
   # Preference order when picking a candidate from slskd search results.

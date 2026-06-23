@@ -38,11 +38,13 @@ ListenBrainz RSS ─▶ [service] ─search─▶ Navidrome ── found ─▶ 
                          │
                          └─ missing ─▶ slskd ─download─▶ slskd downloads dir
                                                               │ (move)
-                                              Navidrome music library ─rescan─▶ found ─▶ add
+                                       import dir (in Navidrome library) ─rescan─▶ found ─▶ add
 ```
 
-The service mounts slskd's **completed downloads** directory (read) and
-Navidrome's **music library** (read-write), and moves finished files between them.
+The service mounts slskd's **completed downloads** directory (read-only) and a
+**dedicated import folder inside** Navidrome's library (read-write), and moves
+finished files between them. Mount only that subfolder — not the whole library —
+so the service can't touch the rest of your collection.
 
 ## Configuration
 
@@ -54,9 +56,8 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `poll_interval` | How often to re-check feeds and advance downloads |
 | `navidrome.url` | Base URL of your Navidrome instance |
 | `slskd.url` / `slskd.api_key` | slskd base URL and REST API key |
-| `paths.slskd_downloads` | slskd's completed-downloads dir (read) |
-| `paths.navidrome_music` | Navidrome's music library root (write) |
-| `paths.import_subdir` | Subfolder under the library where imports land |
+| `paths.slskd_downloads` | slskd's completed-downloads dir (mount read-only) |
+| `paths.import_dir` | Dedicated import dir, a subfolder of Navidrome's library (mount read-write) |
 | `download.format_preference` | Ordered preferred formats, e.g. `[flac, mp3]` |
 | `download.min_bitrate` | Minimum kbps for lossy candidates |
 | `download.max_retries` | Search/download attempts before a track is left missing |
@@ -79,7 +80,7 @@ docker build -t navidrome-lb-jams .
 docker run --rm \
   -v $PWD/config.yaml:/config/config.yaml:ro \
   -v $PWD/state:/data \
-  -v /path/to/navidrome/music:/music \
+  -v /path/to/navidrome/music/lb-jams:/import \
   -v /path/to/slskd/downloads:/downloads:ro \
   navidrome-lb-jams
 ```

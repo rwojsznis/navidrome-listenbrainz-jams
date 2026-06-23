@@ -44,12 +44,12 @@ type Slskd struct {
 
 // Paths describes the filesystem locations the service mounts and moves between.
 type Paths struct {
-	// SlskdDownloads is slskd's completed-downloads directory (read).
+	// SlskdDownloads is slskd's completed-downloads directory (read-only).
 	SlskdDownloads string `yaml:"slskd_downloads"`
-	// NavidromeMusic is the root of Navidrome's music library (write).
-	NavidromeMusic string `yaml:"navidrome_music"`
-	// ImportSubdir is the subfolder under NavidromeMusic where imported files land.
-	ImportSubdir string `yaml:"import_subdir"`
+	// ImportDir is the directory where imported files are written (read-write).
+	// It must sit inside Navidrome's music library so Navidrome indexes them.
+	// Mount ONLY this directory into the container, not the whole library.
+	ImportDir string `yaml:"import_dir"`
 }
 
 // Download controls how candidate files are selected and retried on slskd.
@@ -81,7 +81,7 @@ type Feed struct {
 // Default values applied when fields are omitted from the YAML.
 var defaults = Config{
 	PollInterval: 30 * time.Minute,
-	Paths:        Paths{ImportSubdir: "weekly-jams"},
+	Paths:        Paths{ImportDir: "/import"},
 	Download: Download{
 		FormatPreference: []string{"flac", "mp3"},
 		MinBitrate:       256,
@@ -157,8 +157,8 @@ func (c *Config) validate() error {
 	if c.Paths.SlskdDownloads == "" {
 		return fmt.Errorf("paths.slskd_downloads is required")
 	}
-	if c.Paths.NavidromeMusic == "" {
-		return fmt.Errorf("paths.navidrome_music is required")
+	if c.Paths.ImportDir == "" {
+		return fmt.Errorf("paths.import_dir is required")
 	}
 	if len(c.Feeds) == 0 {
 		return fmt.Errorf("at least one feed is required")
