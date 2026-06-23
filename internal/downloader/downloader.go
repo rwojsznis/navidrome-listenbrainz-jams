@@ -8,6 +8,8 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
@@ -83,15 +85,28 @@ func (d *Downloader) start(ctx context.Context, t *store.Track) (bool, error) {
 		return false, nil
 	}
 
-	query := t.Artist + " " + t.Title
-	responses, err := d.slskd.SearchAndWait(ctx, query, searchTimeout)
-	if err != nil {
-		return false, err
-	}
-	ranked := slskd.Rank(responses, slskd.Criteria{
+	// Soulseek matches every search term against the file path, so including the
+	// artist can yield zero results when shared files don't carry the artist in
+	// their path (common, e.g. "Come Together.flac"). Try the precise
+	// "artist title" query first, then fall back to title-only; the title-aware
+	// ranking still prioritizes candidates whose path contains the artist.
+	criteria := slskd.Criteria{
 		FormatPreference: d.cfg.Download.FormatPreference,
 		MinBitrate:       d.cfg.Download.MinBitrate,
-	}, slskd.Target{Artist: t.Artist, Title: t.Title})
+	}
+	target := slskd.Target{Artist: t.Artist, Title: t.Title}
+
+	var ranked []slskd.Candidate
+	for _, query := range searchQueries(t) {
+		responses, err := d.slskd.SearchAndWait(ctx, query, searchTimeout)
+		if err != nil {
+			return false, err
+		}
+		ranked = slskd.Rank(responses, criteria, target)
+		if len(ranked) > 0 {
+			break
+		}
+	}
 	if len(ranked) == 0 {
 		t.Attempts++
 		t.Status = store.TrackMissing
@@ -182,6 +197,46 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	d.triggerScan(ctx)
 	d.log.Info("imported download", "track", t.Title, "path", imported)
 	return true, nil
+}
+
+// searchQueries returns the slskd queries to try for a track, most precise
+// first, each used only if the previous returned nothing:
+//  1. "artist title"        — precise
+//  2. "title"               — recall (artist often absent from shared paths)
+//  3. simplified title      — last resort: strip "(...)", "feat. ...", "- Live"
+//     decorations that frequently prevent a match
+// Duplicates and empties are dropped.
+func searchQueries(t *store.Track) []string {
+	var queries []string
+	seen := map[string]bool{}
+	add := func(q string) {
+		q = strings.TrimSpace(q)
+		if q != "" && !seen[q] {
+			seen[q] = true
+			queries = append(queries, q)
+		}
+	}
+	add(t.Artist + " " + t.Title)
+	add(t.Title)
+	add(simplifyTitle(t.Title))
+	return queries
+}
+
+var (
+	parenRe = regexp.MustCompile(`\s*[\(\[][^\)\]]*[\)\]]`)               // (Remastered), [Live]
+	featRe  = regexp.MustCompile(`(?i)\s+(feat\.?|ft\.?|featuring|with)\s+.*$`)
+)
+
+// simplifyTitle strips decorations that commonly differ between the feed title
+// and shared filenames: parentheticals/brackets, "feat./ft." clauses, and a
+// trailing " - ..." suffix (e.g. "- Remastered 2019", "- Live").
+func simplifyTitle(title string) string {
+	s := parenRe.ReplaceAllString(title, "")
+	s = featRe.ReplaceAllString(s, "")
+	if i := strings.Index(s, " - "); i > 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }
 
 // fail records a failed attempt and resets the track so it is re-searched, or
