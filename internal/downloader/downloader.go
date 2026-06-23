@@ -164,8 +164,15 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 		d.log.Warn("completed download not found on disk yet", "file", base)
 		return false, nil
 	}
+	// Rename to a clean "<artist> - <title>.<ext>" from the feed metadata,
+	// instead of the uploader's arbitrary filename. (Navidrome indexes by tags,
+	// so this is purely for a tidy library on disk.)
 	dstDir := filepath.Join(d.cfg.Paths.NavidromeMusic, d.cfg.Paths.ImportSubdir)
-	imported, err := files.Move(src, dstDir)
+	name := files.SanitizeFilename(t.Artist + " - " + t.Title)
+	if name != "" {
+		name += filepath.Ext(src)
+	}
+	imported, err := files.Move(src, dstDir, name)
 	if err != nil {
 		return false, err
 	}

@@ -42,14 +42,37 @@ func FindByBasename(root, basename string) (string, bool, error) {
 	return found, found != "", nil
 }
 
-// Move moves src into dstDir, returning the final path. If a file with the same
-// name already exists, a numeric suffix is appended. Falls back to copy+remove
-// across filesystems.
-func Move(src, dstDir string) (string, error) {
+// SanitizeFilename makes s safe to use as a single path component: it replaces
+// filesystem-reserved characters, collapses whitespace, drops control
+// characters, and trims problematic leading/trailing spaces and dots. It
+// deliberately preserves the original casing and punctuation otherwise.
+func SanitizeFilename(s string) string {
+	s = strings.NewReplacer(
+		"/", "_", "\\", "_", ":", "_", "*", "_", "?", "_",
+		"\"", "_", "<", "_", ">", "_", "|", "_",
+	).Replace(s)
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	return strings.Trim(s, " .")
+}
+
+// Move moves src into dstDir as filename, returning the final path. If filename
+// is empty, src's base name is used. If a file with the same name already
+// exists, a numeric suffix is appended. Falls back to copy+remove across
+// filesystems.
+func Move(src, dstDir, filename string) (string, error) {
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return "", fmt.Errorf("create dest dir: %w", err)
 	}
-	dst := uniquePath(filepath.Join(dstDir, filepath.Base(src)))
+	if filename == "" {
+		filename = filepath.Base(src)
+	}
+	dst := uniquePath(filepath.Join(dstDir, filename))
 
 	// Fast path: same-filesystem rename. Falls back to copy+remove on any
 	// failure (typically EXDEV when src and dst are on different mounts).

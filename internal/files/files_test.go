@@ -43,6 +43,21 @@ func TestFindByBasename(t *testing.T) {
 	}
 }
 
+func TestMoveRenames(t *testing.T) {
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+	src := filepath.Join(srcDir, "01-08. Lizzy McAlpine - ceilings.flac")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst, err := Move(src, dstDir, "Lizzy McAlpine - ceilings.flac")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if filepath.Base(dst) != "Lizzy McAlpine - ceilings.flac" {
+		t.Errorf("expected renamed file, got %q", filepath.Base(dst))
+	}
+}
+
 func TestMoveWithCollision(t *testing.T) {
 	srcDir, dstDir := t.TempDir(), t.TempDir()
 
@@ -50,12 +65,12 @@ func TestMoveWithCollision(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dstDir, "track.flac"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	src := filepath.Join(srcDir, "track.flac")
+	src := filepath.Join(srcDir, "orig.flac")
 	if err := os.WriteFile(src, []byte("new"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	dst, err := Move(src, dstDir)
+	dst, err := Move(src, dstDir, "track.flac")
 	if err != nil {
 		t.Fatalf("Move: %v", err)
 	}
@@ -68,5 +83,21 @@ func TestMoveWithCollision(t *testing.T) {
 	data, _ := os.ReadFile(dst)
 	if string(data) != "new" {
 		t.Errorf("moved content = %q, want new", data)
+	}
+}
+
+func TestSanitizeFilename(t *testing.T) {
+	cases := map[string]string{
+		"Foo Fighters - Everlong":       "Foo Fighters - Everlong",
+		"AC/DC - T.N.T":                 "AC_DC - T.N.T",
+		"Sigur Rós - Hoppípolla":        "Sigur Rós - Hoppípolla", // unicode preserved
+		"Band: The Album <feat>":        "Band_ The Album _feat_",
+		"  spaced   out  ":              "spaced out",
+		"trailing dots...":              "trailing dots",
+	}
+	for in, want := range cases {
+		if got := SanitizeFilename(in); got != want {
+			t.Errorf("SanitizeFilename(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
