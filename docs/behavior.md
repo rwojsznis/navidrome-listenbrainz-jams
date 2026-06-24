@@ -1,0 +1,172 @@
+# Behavior & lifecycle
+
+How the daemon behaves at runtime — the bits that aren't obvious from the config
+or code. For setup/config see the [README](../README.md).
+
+## The tick loop
+
+The daemon runs on a timer (`poll_interval`). Each tick:
+
+1. **Discover** — fetch every *configured* feed and upsert its entries/tracks
+   into the SQLite store (idempotent; see below).
+2. **Process** each active playlist through three phases:
+   1. **Resolve** — look up each unplaced track in Navidrome (fuzzy match) and
+      mark the ones found.
+   2. **Create / backfill** — create the Navidrome playlist (or add newly
+      resolved tracks to the existing one).
+   3. **Download** — for tracks still missing, advance the slskd download state
+      machine (search → enqueue → poll → import).
+
+Phases 1–2 are fast; phase 3 is the slow part and is rate-limited (below). All
+state is persisted, so a restart resumes exactly where it left off — nothing is
+re-downloaded.
+
+If a tick takes longer than `poll_interval`, ticks simply run back-to-back (the
+timer coalesces) — they never overlap.
+
+## Playlist state machine
+
+A playlist is `pending` until **every** track is placed in the Navidrome
+playlist, at which point it becomes `done`.
+
+```
+pending ──(all tracks in_playlist)──▶ done
+```
+
+- The daemon only processes `pending` playlists. **`done` is terminal** — the
+  playlist is never looked at again.
+- We do **not** reconcile a `done` playlist against Navidrome. If you delete it
+  in Navidrome afterwards, the app will **not** recreate it.
+- A playlist with permanently-missing tracks (not on Soulseek, retries
+  exhausted) never reaches `done`; it stays `pending` and keeps re-checking the
+  gaps cheaply each tick.
+- The only way to revive a `done` playlist (or force missing tracks to retry) is
+  the **Retry** buttons in the dashboard, which reset tracks **and** flip the
+  playlist back to `pending`.
+
+## Track state machine
+
+```
+pending ─┬─ (found in Navidrome) ───────────────▶ exists ──▶ in_playlist
+         └─ (not found) ─▶ slskd search/enqueue ─▶ downloading
+downloading ─┬─ (transfer succeeded) ─▶ move file ─▶ downloaded ─(rescan)─▶ (resolve) ─▶ exists ─▶ in_playlist
+             └─ (failed / timed out / no candidate) ─▶ missing
+missing ──(retried next tick, until max_retries)──▶ …
+```
+
+- `exists` = found in Navidrome, song id known; gets added to the playlist in
+  the same tick.
+- `downloaded` = file moved into the import dir, awaiting a Navidrome rescan;
+  it's re-resolved on a later tick once indexed.
+- `missing` = not found and not (yet) downloadable. Re-attempted each tick until
+  `attempts` reaches `max_retries`, then left alone (still revivable via Retry).
+
+## Idempotency & resume
+
+- Playlists are keyed by the ListenBrainz **entry id**; tracks by
+  **(playlist, recording MBID)**. Re-discovering the same feed entry is a no-op
+  (`INSERT … ON CONFLICT DO NOTHING`).
+- Adding tracks to a Navidrome playlist skips song ids already present, so
+  re-runs never create duplicates.
+- Each new week is a **new feed entry** → a **new playlist row**, processed
+  fresh. Old weeks remain in their final state.
+
+## Adding / removing / renaming a feed
+
+- **Add a feed** → discovered and processed on the next tick. ✅
+- **Remove or rename a feed** → ⚠️ the feed's existing playlists become
+  **orphaned**. The per-playlist Navidrome client is keyed by **feed name** (from
+  the current config), so a playlist whose feed name is no longer configured logs
+  `no navidrome client for feed "<name>"` every tick and **stalls** — it does not
+  continue, is not marked done, and its tracks are not imported. The state row
+  survives; processing resumes only if that feed name reappears in config.
+  - In-flight slskd transfers that were already enqueued keep running on slskd's
+    side, but the app won't poll/import them while the playlist is orphaned.
+  - Swapping a feed for the **same `navidrome_user`** still orphans the old
+    playlist today, because the lookup is by feed name, not user. (A possible
+    future improvement is to resolve the client by `navidrome_user`.)
+
+## Search strategy (slskd)
+
+For a missing track, queries are tried **most-precise first**, each only if the
+previous returned nothing:
+
+1. `"<artist> <title>"` — precise
+2. `"<title>"` — recall (Soulseek matches all terms against the file path, and
+   shared files often lack the artist in their path)
+3. **simplified title** — last resort; strips `(...)` / `[...]`, `feat./ft.`
+   clauses, and a trailing `- …` suffix (e.g. `Song (Remastered 2019)` → `Song`)
+
+slskd searches stay `InProgress` while responses trickle in, so the client waits
+for the search to reach `Completed` (up to a generous cap) before reading
+results — popular tracks return the most responses and take the longest.
+
+## Candidate ranking
+
+Among a search's files (locked files are ignored), candidates are ranked by:
+
+1. all requested **title** words present in the filename (reject wrong songs)
+2. **artist** present in the path
+3. fewest **extra** words (so the original beats remix/live/edited versions)
+4. preferred **format** (`format_preference`, e.g. `[flac, mp3, opus]`)
+5. peer has a **free upload slot**
+6. higher **bitrate**, faster uploader, shorter queue
+
+`min_bitrate` rejects lossy files below the threshold (lossless formats are
+exempt; opus is treated as lossy, so set a sensible `min_bitrate` if you enable
+it). Because many peers are unreachable, the downloader tries the **top several
+candidates** in order until one accepts the download.
+
+## File import & naming
+
+- Completed downloads are located in `slskd_downloads` by **basename** (so we
+  don't depend on slskd's folder layout) and **moved** into `import_dir`.
+- They are **renamed** to `"<artist> - <title>.<ext>"` from the feed metadata.
+  This is cosmetic — Navidrome indexes by **tags** — but it also helps Navidrome
+  index downloads that have **no tags** (it falls back to the filename).
+- `import_dir` must be a subfolder **inside** Navidrome's library so the files
+  get indexed. Mount only that folder into the container (least privilege).
+
+## Rescans
+
+After importing a file, the daemon triggers a Navidrome `startScan` (throttled to
+at most once per 10s to absorb bursts). The imported track is re-resolved on a
+later tick once Navidrome has indexed it. Scans use the **first feed's**
+credentials, which must therefore be an **admin-capable** Navidrome user
+(Subsonic `startScan` requires admin).
+
+## Download rate-limiting & concurrency
+
+- New slskd searches are **sequential** and capped at **5 per playlist per tick**
+  — so a playlist with many missing tracks doesn't make one tick run for many
+  minutes, and the resolve/import/backfill cycle stays responsive.
+- Already-downloading transfers are polled cheaply every tick (no cap).
+- Actual transfer **concurrency is slskd's job** — the app only enqueues; slskd's
+  own slot limits govern parallel transfers.
+
+## Cleanup
+
+The app cleans up after itself in slskd so its lists don't grow unbounded:
+
+- **Searches** are deleted after their responses are read.
+- **Completed** transfers are removed right after the file is imported (the file
+  is already moved out, so only the record is cleared).
+- **Failed** transfers are removed when abandoned.
+
+As a backstop (e.g. for anything missed while the app is down), set slskd's own
+`retention` in `slskd.yml` — see `deploy/slskd/slskd.yml`. Keep
+`transfers.download.succeeded` generous (the app imports *from* that record), and
+do **not** set `files.complete` (the app moves completed files out itself;
+auto-deleting them risks losing a file before import).
+
+## Failure handling (summary)
+
+| Situation | Result |
+|---|---|
+| No usable slskd candidate | `missing`, `attempts++`, retried later |
+| Enqueue rejected (peer unreachable) | try next ranked peer (up to ~5); else `missing` |
+| Transfer errored/cancelled/timed-out | record removed, `missing`, re-searched next tick |
+| Download stalls past `per_track_timeout` | abandoned → `missing` |
+| `max_retries` reached | stays `missing`; only Retry revives it |
+| Feed fetch fails (network) | logged and skipped; stored playlists still processed |
+| Playlist's feed removed from config | orphaned/stalled (see above) |

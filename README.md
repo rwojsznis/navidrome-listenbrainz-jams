@@ -24,6 +24,10 @@ It is **idempotent** and **resumable**: state is kept in SQLite, an existing
 playlist is never duplicated, and missing tracks are backfilled on later runs
 (best-effort). A playlist is considered done only when every track is placed.
 
+For the full runtime behavior — state machines, feed add/remove semantics,
+search/ranking strategy, cleanup, and failure handling — see
+[`docs/behavior.md`](docs/behavior.md).
+
 ## Status dashboard
 
 A read-only web UI (default `http://localhost:8080`, set via `web.listen`) lists
