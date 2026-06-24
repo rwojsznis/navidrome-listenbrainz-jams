@@ -23,9 +23,19 @@ retention:
   files:
     incomplete: 1440        # clean up stuck partial downloads after a day
 
-# Don't share anything from this dev instance.
+# Share the assembled weekly-jams playlist back to the network. Bind-mounted
+# read-only at /shared/weekly-jams in docker-compose.yaml.
 shares:
-  directories: []
+  directories:
+    - /shared/weekly-jams
+
+# Limit how much we give back: a single upload slot and ~1 MB/s total.
+# speed_limit is in kibibytes per second (1024 KiB/s ≈ 1 MB/s).
+transfers:
+  global:
+    upload:
+      slots: 1
+      speed_limit: 1024
 
 web:
   # The service authenticates to slskd's REST API with this key (sent as the

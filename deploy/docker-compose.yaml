@@ -47,4 +47,7 @@ services:
       - ../data/slskd:/app
       - ../data/downloads:/downloads
       - ../data/incomplete:/incomplete
+      # Share the assembled weekly-jams playlist back to the Soulseek network
+      # (read-only). Mounted under /shared so it's separate from /downloads.
+      - ../data/music/weekly-jams:/shared/weekly-jams:ro
     restart: unless-stopped
