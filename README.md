@@ -12,11 +12,15 @@ On a configurable interval, for each configured feed:
 1. **Fetch** the ListenBrainz syndication (Atom) feed. Each entry is a playlist
    (e.g. *"Weekly Jams for emq, week of 2026-06-22 Mon"*) whose tracks carry an
    artist, title, and MusicBrainz recording MBID.
-2. **Resolve** each track against Navidrome (fuzzy match on artist + title).
+2. **Resolve** each track against Navidrome — by **MusicBrainz recording id**
+   when the library file carries one, otherwise a decoration-aware fuzzy match on
+   artist + title.
 3. **Download** tracks not in the library via slskd: pick the best candidate
    (format preference, bitrate, free upload slot), enqueue, and poll the transfer.
 4. **Import** completed downloads into the Navidrome music library and trigger a
-   rescan.
+   rescan. *Optionally* fingerprint each file (Chromaprint + AcoustID) and write
+   its MusicBrainz recording id into the tags, so Navidrome — and the resolve
+   step — can match it exactly.
 5. **Assemble** the playlist, owned by the feed's Navidrome user, adding tracks as
    they become available.
 
@@ -66,12 +70,29 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `download.min_bitrate` | Minimum kbps for lossy candidates |
 | `download.max_retries` | Search/download attempts before a track is left missing |
 | `matching.fuzzy_threshold` | 0..1 similarity required to accept a match |
+| `fingerprint.enabled` | Turn on acoustic fingerprinting + MBID tagging (default off) |
+| `fingerprint.acoustid_api_key` | Free [AcoustID](https://acoustid.org/api-key) client key (required when enabled) |
 | `web.listen` | Dashboard address, e.g. `:8080` (empty disables it) |
 | `feeds[]` | One entry per feed: `name`, `rss_url`, `navidrome_user`, `navidrome_pass` |
 
 Playlists are per-user in Navidrome, so each feed authenticates as its own
 `navidrome_user`. The post-import **rescan uses the first feed's credentials**, so
 that user must be Navidrome-admin (Subsonic `startScan` requires it).
+
+### Acoustic fingerprinting (optional)
+
+When `fingerprint.enabled` is true, each freshly downloaded file is identified by
+its audio — `fpcalc` (Chromaprint) computes a fingerprint, [AcoustID](https://acoustid.org)
+resolves it to a MusicBrainz **recording id**, and that id is written into the
+file's tags (FLAC/MP3 in pure Go; Opus via `opustags`). Navidrome then indexes the
+recording id, and the resolve step matches by id — an exact join that survives
+mislabeled tags like `Sacrifice (PMEDIA)`.
+
+It **trusts the download** (the feed's own recording id is preferred when AcoustID
+lists it; otherwise the best-scoring result is used) and never rejects on
+mismatch. A file AcoustID can't identify is simply left untagged — never a hard
+failure. The Docker image bundles the required `fpcalc` and `opustags` binaries;
+you only need a (free) AcoustID API key.
 
 ## Running
 
@@ -127,6 +148,8 @@ internal/match          fuzzy artist/title matching
 internal/files          locate + move completed downloads
 internal/store          SQLite state
 internal/downloader     slskd-backed download step (pipeline.Downloader)
+internal/fingerprint    optional Chromaprint/AcoustID identification
+internal/tags           write MusicBrainz recording id into FLAC/MP3/Opus
 internal/pipeline       orchestration / state machine
 internal/web            read-only status dashboard
 ```

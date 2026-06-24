@@ -10,8 +10,9 @@ The daemon runs on a timer (`poll_interval`). Each tick:
 1. **Discover** — fetch every *configured* feed and upsert its entries/tracks
    into the SQLite store (idempotent; see below).
 2. **Process** each active playlist through three phases:
-   1. **Resolve** — look up each unplaced track in Navidrome (fuzzy match) and
-      mark the ones found.
+   1. **Resolve** — look up each unplaced track in Navidrome (MusicBrainz
+      recording-id match, else fuzzy; see *Matching strategy*) and mark the ones
+      found.
    2. **Create / backfill** — create the Navidrome playlist (or add newly
       resolved tracks to the existing one).
    3. **Download** — for tracks still missing, advance the slskd download state
@@ -56,8 +57,9 @@ missing ──(retried next tick, until max_retries)──▶ …
 
 - `exists` = found in Navidrome, song id known; gets added to the playlist in
   the same tick.
-- `downloaded` = file moved into the import dir, awaiting a Navidrome rescan;
-  it's re-resolved on a later tick once indexed.
+- `downloaded` = file moved into the import dir (and, if fingerprinting is on,
+  tagged with its MusicBrainz recording id), awaiting a Navidrome rescan; it's
+  re-resolved on a later tick once indexed.
 - `missing` = not found and not (yet) downloadable. Re-attempted each tick until
   `attempts` reaches `max_retries`, then left alone (still revivable via Retry).
 
@@ -85,6 +87,26 @@ missing ──(retried next tick, until max_retries)──▶ …
   - Swapping a feed for the **same `navidrome_user`** still orphans the old
     playlist today, because the lookup is by feed name, not user. (A possible
     future improvement is to resolve the client by `navidrome_user`.)
+
+## Matching strategy (Navidrome)
+
+When resolving a feed track against Navidrome (`search3` on `"<artist> <title>"`,
+top 50), candidates are matched in priority order:
+
+1. **MusicBrainz recording id** — if a candidate's `musicBrainzId` equals the
+   feed track's recording MBID, it's an exact, authoritative match and wins over
+   everything else (no fuzzy needed). This is what the optional fingerprinting
+   step enables for downloaded files.
+2. **Decoration-aware fuzzy** — otherwise, a normalized artist+title similarity
+   (≥ `fuzzy_threshold`). Both sides are also compared with decorations stripped
+   (`(PMEDIA)`, `(feat. …)`, `- Remastered`, …) plus a length-guarded containment
+   check, so library tags that carry extra cruft the feed lacks — or a leading
+   `The` — still match. This tolerance is why a file the downloader fetched (via
+   the simplified-title search) resolves back to its library entry.
+
+Without it, decorated tags scored below threshold and tracks could sit in
+`downloaded` forever — and the same false-negative would re-download a track
+already in the library.
 
 ## Search strategy (slskd)
 
@@ -126,6 +148,32 @@ candidates** in order until one accepts the download.
   index downloads that have **no tags** (it falls back to the filename).
 - `import_dir` must be a subfolder **inside** Navidrome's library so the files
   get indexed. Mount only that folder into the container (least privilege).
+
+## Acoustic fingerprinting (optional)
+
+When `fingerprint.enabled` is set, each imported file is identified before the
+rescan and tagged with its MusicBrainz recording id:
+
+1. `fpcalc` (Chromaprint) computes a fingerprint + duration from the audio.
+2. [AcoustID](https://acoustid.org) resolves the fingerprint to candidate
+   recording MBIDs. The feed track's **own** recording id is chosen when it's
+   among them (a confirmed match); otherwise the best-scoring candidate.
+3. The id is written into the file's tags — `MUSICBRAINZ_TRACKID` Vorbis comment
+   for FLAC (pure Go) and Opus (via the `opustags` binary), an ID3v2 `UFID` frame
+   (owner `http://musicbrainz.org`) for MP3 (pure Go).
+
+Navidrome then indexes the recording id, so the next resolve matches by id
+exactly (see *Matching strategy*).
+
+Properties:
+
+- **Trusts the download** — it tags with the identified/feed id and never rejects
+  on mismatch (no verification gate).
+- **Best-effort** — fingerprint/lookup/tag failures are logged and the import
+  still proceeds; a file AcoustID can't identify is left untagged.
+- **Requirements** — the `fpcalc` and `opustags` binaries (bundled in the Docker
+  image) and a free AcoustID API key. Disabled by default; downloads are imported
+  untagged.
 
 ## Rescans
 
@@ -169,4 +217,5 @@ auto-deleting them risks losing a file before import).
 | Download stalls past `per_track_timeout` | abandoned → `missing` |
 | `max_retries` reached | stays `missing`; only Retry revives it |
 | Feed fetch fails (network) | logged and skipped; stored playlists still processed |
+| Fingerprint / AcoustID / tag fails | logged; file imported untagged, import proceeds |
 | Playlist's feed removed from config | orphaned/stalled (see above) |
