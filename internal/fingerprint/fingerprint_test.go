@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,8 +58,11 @@ func TestLookupParsesRecordingIDs(t *testing.T) {
 }
 
 func TestLookupSurfacesAPIError(t *testing.T) {
+	// AcoustID returns the error in a JSON body with a non-200 status; the
+	// message must be surfaced rather than a bare "http 400".
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"status":"error","error":{"message":"invalid API key"}}`))
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"status":"error","error":{"code":4,"message":"invalid API key"}}`))
 	}))
 	defer srv.Close()
 
@@ -67,8 +71,9 @@ func TestLookupSurfacesAPIError(t *testing.T) {
 	lookupURL = srv.URL
 	defer func() { lookupURL = old }()
 
-	if _, err := s.lookup(context.Background(), "AQADtABC", 188); err == nil {
-		t.Fatal("expected error for status=error response")
+	_, err := s.lookup(context.Background(), "AQADtABC", 188)
+	if err == nil || !strings.Contains(err.Error(), "invalid API key") {
+		t.Fatalf("want error mentioning 'invalid API key', got %v", err)
 	}
 }
 

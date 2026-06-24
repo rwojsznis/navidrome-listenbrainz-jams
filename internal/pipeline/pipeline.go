@@ -50,29 +50,57 @@ func New(st *store.Store, cfg *config.Config, log *slog.Logger) *Pipeline {
 // SetDownloader wires the slskd download step (optional).
 func (p *Pipeline) SetDownloader(d Downloader) { p.downloader = d }
 
-// Run advances every active (not-done) playlist by one step.
+// Run advances every active (not-done) playlist by one step. It runs in two
+// phases ACROSS ALL playlists: first the fast assemble pass (resolve against
+// Navidrome + create/backfill the playlist), then the slow download pass. This
+// ordering matters — a single playlist with many in-flight slskd downloads can
+// take minutes in its download pass, and doing assemble-then-download per
+// playlist would let that starve another playlist's backfill (e.g. a manual
+// re-sync) for the rest of the tick. Splitting the phases keeps assembly
+// responsive regardless of download load elsewhere.
 func (p *Pipeline) Run(ctx context.Context) {
 	playlists, err := p.store.ActivePlaylists()
 	if err != nil {
 		p.log.Error("list active playlists", "err", err)
 		return
 	}
+
+	// Phase 1: assemble every playlist (fast).
+	tracksByPlaylist := make(map[int64][]store.Track, len(playlists))
 	for _, pl := range playlists {
-		if err := p.processPlaylist(ctx, pl); err != nil {
-			p.log.Error("process playlist", "title", pl.Title, "err", err)
+		tracks, err := p.assemble(ctx, pl)
+		if err != nil {
+			p.log.Error("assemble playlist", "title", pl.Title, "err", err)
+			continue
+		}
+		tracksByPlaylist[pl.ID] = tracks
+	}
+
+	// Phase 2: advance downloads (slow) and finalize completion.
+	for _, pl := range playlists {
+		tracks, ok := tracksByPlaylist[pl.ID]
+		if !ok {
+			continue // assemble failed; retry next tick
+		}
+		if err := p.download(ctx, pl, tracks); err != nil {
+			p.log.Error("download playlist", "title", pl.Title, "err", err)
 		}
 	}
 }
 
-func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error {
+// assemble resolves a playlist's tracks against Navidrome and creates/backfills
+// the Navidrome playlist from whatever is already available. It does NOT touch
+// slskd. It returns the (mutated) track slice so the download pass can continue
+// from the same in-memory state.
+func (p *Pipeline) assemble(ctx context.Context, pl store.Playlist) ([]store.Track, error) {
 	client := p.clients[pl.FeedName]
 	if client == nil {
-		return fmt.Errorf("no navidrome client for feed %q", pl.FeedName)
+		return nil, fmt.Errorf("no navidrome client for feed %q", pl.FeedName)
 	}
 
 	tracks, err := p.store.TracksFor(pl.ID)
 	if err != nil {
-		return fmt.Errorf("load tracks: %w", err)
+		return nil, fmt.Errorf("load tracks: %w", err)
 	}
 
 	// 1. Resolve every track not yet placed in the playlist.
@@ -99,7 +127,7 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 			t.Status = store.TrackExists
 			t.LastError = ""
 			if err := p.store.UpdateTrack(t); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -119,7 +147,7 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 	placed := make(map[string]bool)
 	navPl, err := client.FindPlaylistByName(ctx, pl.Title)
 	if err != nil {
-		return fmt.Errorf("find playlist: %w", err)
+		return nil, fmt.Errorf("find playlist: %w", err)
 	}
 	switch {
 	case navPl == nil && len(toAdd) == 0:
@@ -127,7 +155,7 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 	case navPl == nil:
 		navPl, err = client.CreatePlaylist(ctx, pl.Title, toAdd)
 		if err != nil {
-			return fmt.Errorf("create playlist: %w", err)
+			return nil, fmt.Errorf("create playlist: %w", err)
 		}
 		p.log.Info("created playlist", "title", pl.Title, "user", pl.NavidromeUser, "songs", len(toAdd))
 		_ = p.store.SetPlaylistNavidromeID(pl.ID, navPl.ID)
@@ -150,7 +178,7 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 		}
 		if len(newOnes) > 0 {
 			if err := client.AddToPlaylist(ctx, navPl.ID, newOnes); err != nil {
-				return fmt.Errorf("add to playlist: %w", err)
+				return nil, fmt.Errorf("add to playlist: %w", err)
 			}
 			p.log.Info("backfilled playlist", "title", pl.Title, "added", len(newOnes))
 			// Re-read rather than trusting the add: Navidrome can accept the
@@ -167,11 +195,18 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 		if t.Status == store.TrackExists && placed[t.NavidromeSongID] {
 			t.Status = store.TrackInPlaylist
 			if err := p.store.UpdateTrack(t); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
+	return tracks, nil
+}
+
+// download advances any not-yet-available tracks via slskd and marks the
+// playlist done once every track is placed. It is the slow pass and runs after
+// every playlist has been assembled (see Run).
+func (p *Pipeline) download(ctx context.Context, pl store.Playlist, tracks []store.Track) error {
 	// 5. Download pass: poll in-flight downloads and import completed ones every
 	//    tick (cheap), but cap NEW slskd searches per tick so a playlist with
 	//    many missing tracks doesn't make a single tick run for many minutes —

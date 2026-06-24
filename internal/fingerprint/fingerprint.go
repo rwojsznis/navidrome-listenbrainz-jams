@@ -137,16 +137,19 @@ func (s *Service) lookup(ctx context.Context, fingerprint string, duration float
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http %d", resp.StatusCode)
-	}
 
+	// AcoustID returns a JSON error body even on non-2xx (e.g. 400 with
+	// "invalid API key"), so decode first and prefer its message over the bare
+	// status code — otherwise misconfiguration looks like an opaque "http 400".
 	var ar acoustIDResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ar); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("http %d: unparseable response: %w", resp.StatusCode, err)
 	}
 	if ar.Status != "ok" {
-		return nil, fmt.Errorf("acoustid status %q: %s", ar.Status, ar.Error.Message)
+		if ar.Error.Message != "" {
+			return nil, fmt.Errorf("%s (http %d)", ar.Error.Message, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("http %d", resp.StatusCode)
 	}
 
 	var mbids []string
