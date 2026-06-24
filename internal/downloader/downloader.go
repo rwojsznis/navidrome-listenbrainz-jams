@@ -8,12 +8,12 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/files"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/match"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/navidrome"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/slskd"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
@@ -30,15 +30,27 @@ const maxEnqueueAttempts = 5
 // several downloaded tracks await indexing) within a short window.
 const scanThrottle = 10 * time.Second
 
+// MBIDTagger optionally identifies a freshly imported file and writes its
+// MusicBrainz recording id into the file's tags (so Navidrome indexes it).
+// feedMBID is the feed's recording id, used to prefer a confirmed match. A nil
+// tagger disables the step; failures are non-fatal (logged, import proceeds).
+type MBIDTagger interface {
+	Tag(ctx context.Context, path, feedMBID string) error
+}
+
 // Downloader drives slskd downloads for tracks missing from Navidrome.
 type Downloader struct {
-	slskd *slskd.Client
-	scan  *navidrome.Client // admin-capable client used to trigger library scans
-	cfg   *config.Config
-	log   *slog.Logger
+	slskd  *slskd.Client
+	scan   *navidrome.Client // admin-capable client used to trigger library scans
+	cfg    *config.Config
+	tagger MBIDTagger // optional acoustic-fingerprint tagger
+	log    *slog.Logger
 
 	lastScan time.Time
 }
+
+// SetTagger wires the optional fingerprint/tag step (run on each imported file).
+func (d *Downloader) SetTagger(t MBIDTagger) { d.tagger = t }
 
 // New returns a Downloader. scan is a Navidrome client used to trigger library
 // rescans after imports (must be admin-capable).
@@ -198,6 +210,14 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	t.ImportedPath = imported
 	t.Status = store.TrackDownloaded
 	t.LastError = ""
+	// Optionally fingerprint the imported file and write its MusicBrainz recording
+	// id into the tags before the rescan, so Navidrome indexes it with the id.
+	// Best-effort: a failure leaves the file untagged but still imported.
+	if d.tagger != nil {
+		if err := d.tagger.Tag(ctx, imported, t.RecordingMBID); err != nil {
+			d.log.Warn("fingerprint/tag", "track", t.Title, "err", err)
+		}
+	}
 	// Remove the now-imported transfer from slskd's list (best-effort; the file
 	// is already moved, so this only clears the record).
 	if err := d.slskd.RemoveDownload(ctx, t.SlskdUsername, transfer.ID); err != nil {
@@ -214,6 +234,7 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 //  2. "title"               — recall (artist often absent from shared paths)
 //  3. simplified title      — last resort: strip "(...)", "feat. ...", "- Live"
 //     decorations that frequently prevent a match
+//
 // Duplicates and empties are dropped.
 func searchQueries(t *store.Track) []string {
 	var queries []string
@@ -227,25 +248,8 @@ func searchQueries(t *store.Track) []string {
 	}
 	add(t.Artist + " " + t.Title)
 	add(t.Title)
-	add(simplifyTitle(t.Title))
+	add(match.SimplifyTitle(t.Title))
 	return queries
-}
-
-var (
-	parenRe = regexp.MustCompile(`\s*[\(\[][^\)\]]*[\)\]]`)               // (Remastered), [Live]
-	featRe  = regexp.MustCompile(`(?i)\s+(feat\.?|ft\.?|featuring|with)\s+.*$`)
-)
-
-// simplifyTitle strips decorations that commonly differ between the feed title
-// and shared filenames: parentheticals/brackets, "feat./ft." clauses, and a
-// trailing " - ..." suffix (e.g. "- Remastered 2019", "- Live").
-func simplifyTitle(title string) string {
-	s := parenRe.ReplaceAllString(title, "")
-	s = featRe.ReplaceAllString(s, "")
-	if i := strings.Index(s, " - "); i > 0 {
-		s = s[:i]
-	}
-	return strings.TrimSpace(s)
 }
 
 // fail records a failed attempt and resets the track so it is re-searched, or

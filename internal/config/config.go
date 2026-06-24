@@ -20,9 +20,26 @@ type Config struct {
 	Paths        Paths         `yaml:"paths"`
 	Download     Download      `yaml:"download"`
 	Matching     Matching      `yaml:"matching"`
+	Fingerprint  Fingerprint   `yaml:"fingerprint"`
 	State        State         `yaml:"state"`
 	Web          Web           `yaml:"web"`
 	Feeds        []Feed        `yaml:"feeds"`
+}
+
+// Fingerprint controls the optional acoustic-fingerprinting step that identifies
+// a freshly downloaded file via Chromaprint/AcoustID and writes its MusicBrainz
+// recording id into the file's tags (so Navidrome indexes it). Disabled by
+// default; it requires the external `fpcalc` and `opustags` binaries.
+type Fingerprint struct {
+	// Enabled turns the step on. When false, downloads are imported untagged.
+	Enabled bool `yaml:"enabled"`
+	// AcoustIDAPIKey is the (free) AcoustID client API key. Required when enabled.
+	AcoustIDAPIKey string `yaml:"acoustid_api_key"`
+	// FpcalcPath is the Chromaprint fpcalc binary (default "fpcalc" via PATH).
+	FpcalcPath string `yaml:"fpcalc_path"`
+	// OpustagsPath is the opustags binary used to tag .opus files (default
+	// "opustags" via PATH). FLAC and MP3 are tagged in pure Go.
+	OpustagsPath string `yaml:"opustags_path"`
 }
 
 // Web controls the read-only status dashboard.
@@ -88,9 +105,10 @@ var defaults = Config{
 		PerTrackTimeout:  2 * time.Hour,
 		MaxRetries:       3,
 	},
-	Matching: Matching{FuzzyThreshold: 0.85},
-	State:    State{DBPath: "/data/state.db"},
-	Web:      Web{Listen: ":8080"},
+	Matching:    Matching{FuzzyThreshold: 0.85},
+	Fingerprint: Fingerprint{FpcalcPath: "fpcalc", OpustagsPath: "opustags"},
+	State:       State{DBPath: "/data/state.db"},
+	Web:         Web{Listen: ":8080"},
 }
 
 // Load reads, interpolates, parses and validates the config file at path.
@@ -159,6 +177,9 @@ func (c *Config) validate() error {
 	}
 	if c.Paths.ImportDir == "" {
 		return fmt.Errorf("paths.import_dir is required")
+	}
+	if c.Fingerprint.Enabled && c.Fingerprint.AcoustIDAPIKey == "" {
+		return fmt.Errorf("fingerprint.acoustid_api_key is required when fingerprint.enabled is true")
 	}
 	if len(c.Feeds) == 0 {
 		return fmt.Errorf("at least one feed is required")

@@ -36,6 +36,19 @@ matching:
 state:
   db_path: /data/state.db
 
+fingerprint:
+  # Optional acoustic-fingerprinting step. When enabled, each freshly downloaded
+  # file is identified with Chromaprint (fpcalc) + AcoustID, and its MusicBrainz
+  # recording id is written into the file's tags so Navidrome indexes it. The
+  # download is trusted (no rejection on mismatch); a no-match leaves the file
+  # untagged. Requires the `fpcalc` and `opustags` binaries (bundled in the
+  # Docker image) and a free AcoustID API key (https://acoustid.org/api-key).
+  enabled: false
+  acoustid_api_key: ${ACOUSTID_API_KEY:-}
+  # Override only if the binaries aren't on PATH.
+  fpcalc_path: fpcalc
+  opustags_path: opustags
+
 web:
   # Read-only status dashboard address. Empty disables it.
   listen: ":8080"

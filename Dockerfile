@@ -9,8 +9,16 @@ COPY . .
 # Pure-Go (modernc sqlite) -> fully static binary, no cgo. Works on arm64/amd64.
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/navidrome-lb-jams ./cmd/navidrome-lb-jams
 
-# Runtime stage: distroless static includes CA certs for HTTPS (ListenBrainz/MusicBrainz).
-FROM gcr.io/distroless/static-debian12
+# Runtime stage. The Go binary is fully static (CGO_ENABLED=0), but the optional
+# acoustic-fingerprinting step shells out to two external tools — fpcalc
+# (libchromaprint-tools) and opustags — so we use debian-slim instead of
+# distroless-static to carry them. ca-certificates covers HTTPS to
+# ListenBrainz/MusicBrainz/AcoustID. If you never enable fingerprinting, these
+# packages are dead weight but harmless.
+FROM debian:12-slim
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ca-certificates libchromaprint-tools opustags \
+	&& rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/navidrome-lb-jams /navidrome-lb-jams
 
 # Mount points: /config (config.yaml), /data (state.db), plus the Navidrome music

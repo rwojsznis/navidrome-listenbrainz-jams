@@ -15,6 +15,7 @@ import (
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/downloader"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/fingerprint"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/listenbrainz"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/navidrome"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/pipeline"
@@ -52,6 +53,10 @@ func main() {
 	scanClient := navidrome.New(cfg.Navidrome.URL, cfg.Feeds[0].NavidromeUser, cfg.Feeds[0].NavidromePass)
 	pipe := pipeline.New(st, cfg, logger)
 	dl := downloader.New(slskd.New(cfg.Slskd.URL, cfg.Slskd.APIKey), scanClient, cfg, logger)
+	if cfg.Fingerprint.Enabled {
+		dl.SetTagger(fingerprint.New(cfg, logger))
+		slog.Info("acoustic fingerprinting enabled")
+	}
 	pipe.SetDownloader(dl)
 
 	app := &app{

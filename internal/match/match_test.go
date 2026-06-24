@@ -58,3 +58,32 @@ func TestBest(t *testing.T) {
 		t.Error("expected no match for absent track")
 	}
 }
+
+// TestBestTitleDecorations covers library tags that carry decorations the feed
+// title lacks. Without leniency these files (which the downloader fetched via
+// SimplifyTitle) get stuck unresolved because resolve() can't match them back.
+func TestBestTitleDecorations(t *testing.T) {
+	matches := []struct {
+		name              string
+		feedArtist, feedTitle string
+		libArtist, libTitle   string
+	}{
+		{"scene tag", "The Weeknd", "Sacrifice", "The Weeknd", "Sacrifice (PMEDIA)"},
+		{"feat in title", "Gorillaz feat. Kali Uchis", "She’s My Collar", "Gorillaz", "She's My Collar (feat. Kali Uchis)"},
+		{"leading article", "Corona", "The Rhythm of the Night", "Corona", "Rhythm Of The Night"},
+	}
+	for _, m := range matches {
+		if _, ok := Best(Candidate{Artist: m.feedArtist, Title: m.feedTitle},
+			[]Candidate{{Artist: m.libArtist, Title: m.libTitle}}, 0.85); !ok {
+			t.Errorf("%s: expected match for %q/%q vs %q/%q", m.name,
+				m.feedArtist, m.feedTitle, m.libArtist, m.libTitle)
+		}
+	}
+
+	// Guard: a short title must not be swallowed by a longer one for the same
+	// artist (distinct songs).
+	if _, ok := Best(Candidate{Artist: "ABBA", Title: "Money"},
+		[]Candidate{{Artist: "ABBA", Title: "Money, Money, Money"}}, 0.85); ok {
+		t.Error("expected no match between distinct songs sharing a word")
+	}
+}

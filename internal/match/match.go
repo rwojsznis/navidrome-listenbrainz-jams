@@ -5,6 +5,7 @@
 package match
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -91,7 +92,7 @@ func Best(target Candidate, candidates []Candidate, threshold float64) (Result, 
 	best := Result{Index: -1}
 	for i, c := range candidates {
 		artistScore := artistSimilarity(target.Artist, c.Artist)
-		titleScore := Similarity(target.Title, c.Title)
+		titleScore := titleSimilarity(target.Title, c.Title)
 		if artistScore < threshold || titleScore < threshold {
 			continue
 		}
@@ -118,6 +119,54 @@ func artistSimilarity(a, b string) float64 {
 		return 0.95
 	}
 	return Similarity(a, b)
+}
+
+// titleSimilarity compares titles tolerantly. Library tags routinely carry
+// decorations the feed title lacks — scene/release tags like "(PMEDIA)", a
+// "(feat. X)" credit, a "- Remastered" suffix, or a leading article — so a
+// plain Similarity rejects legitimate matches (the very files the downloader
+// fetched using SimplifyTitle). We take the best of: the raw comparison, the
+// decoration-stripped comparison, and a guarded containment bonus.
+func titleSimilarity(a, b string) float64 {
+	best := Similarity(a, b)
+	sa, sb := SimplifyTitle(a), SimplifyTitle(b)
+	if s := Similarity(sa, sb); s > best {
+		best = s
+	}
+	// Containment of the simplified forms covers a leftover leading article
+	// ("The Rhythm of the Night" vs "Rhythm of the Night"). Guard with a length
+	// ratio so a short title is not swallowed by a longer one ("Money" vs
+	// "Money, Money, Money").
+	if best < 0.95 {
+		na, nb := Normalize(sa), Normalize(sb)
+		if na != "" && nb != "" && (strings.Contains(na, nb) || strings.Contains(nb, na)) {
+			short, long := len(na), len(nb)
+			if short > long {
+				short, long = long, short
+			}
+			if float64(short)/float64(long) >= 0.6 {
+				best = 0.95
+			}
+		}
+	}
+	return best
+}
+
+var (
+	parenRe = regexp.MustCompile(`\s*[\(\[][^\)\]]*[\)\]]`) // (Remastered), [Live], (PMEDIA)
+	featRe  = regexp.MustCompile(`(?i)\s+(feat\.?|ft\.?|featuring|with)\s+.*$`)
+)
+
+// SimplifyTitle strips decorations that commonly differ between a feed title
+// and a library tag (or a shared filename): parentheticals/brackets, "feat./ft."
+// clauses, and a trailing " - ..." suffix (e.g. "- Remastered 2019", "- Live").
+func SimplifyTitle(title string) string {
+	s := parenRe.ReplaceAllString(title, "")
+	s = featRe.ReplaceAllString(s, "")
+	if i := strings.Index(s, " - "); i > 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }
 
 // levenshtein computes edit distance between two strings (rune-aware).
