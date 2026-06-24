@@ -44,11 +44,12 @@ func New(baseURL, user, pass string) *Client {
 
 // Song is a track returned by search/playlist endpoints.
 type Song struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Artist   string `json:"artist"`
-	Album    string `json:"album"`
-	Duration int    `json:"duration"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Artist        string `json:"artist"`
+	Album         string `json:"album"`
+	Duration      int    `json:"duration"`
+	MusicBrainzID string `json:"musicBrainzId"` // recording MBID (OpenSubsonic), empty if untagged
 }
 
 // Playlist is a Subsonic playlist, optionally with its entries populated.

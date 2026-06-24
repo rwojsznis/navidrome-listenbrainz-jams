@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/match"
@@ -221,18 +222,34 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 	return nil
 }
 
-// resolve searches Navidrome for a track and returns the best fuzzy match.
+// resolve searches Navidrome for a track and returns the best match, preferring
+// an exact MusicBrainz recording-id match over fuzzy text matching.
 func (p *Pipeline) resolve(ctx context.Context, client *navidrome.Client, t *store.Track) (*navidrome.Song, bool) {
 	songs, err := client.Search3(ctx, t.Artist+" "+t.Title, 50)
 	if err != nil {
 		p.log.Warn("navidrome search", "track", t.Title, "err", err)
 		return nil, false
 	}
+	return selectMatch(songs, t, p.cfg.Matching.FuzzyThreshold)
+}
+
+// selectMatch picks the library song for a feed track. A matching MusicBrainz
+// recording id is authoritative (it provably identifies the same recording) and
+// takes priority over any fuzzy text match; fuzzy is the fallback for songs
+// without an MBID tag. It is pure so it can be tested without a Navidrome client.
+func selectMatch(songs []navidrome.Song, t *store.Track, threshold float64) (*navidrome.Song, bool) {
+	if t.RecordingMBID != "" {
+		for i := range songs {
+			if songs[i].MusicBrainzID != "" && strings.EqualFold(songs[i].MusicBrainzID, t.RecordingMBID) {
+				return &songs[i], true
+			}
+		}
+	}
 	cands := make([]match.Candidate, len(songs))
 	for i, s := range songs {
 		cands[i] = match.Candidate{Artist: s.Artist, Title: s.Title}
 	}
-	res, ok := match.Best(match.Candidate{Artist: t.Artist, Title: t.Title}, cands, p.cfg.Matching.FuzzyThreshold)
+	res, ok := match.Best(match.Candidate{Artist: t.Artist, Title: t.Title}, cands, threshold)
 	if !ok {
 		return nil, false
 	}
