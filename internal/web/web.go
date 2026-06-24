@@ -31,6 +31,7 @@ func New(st *store.Store, addr string, log *slog.Logger) *Server {
 	mux.HandleFunc("/playlist/{id}", s.handlePlaylist)
 	mux.HandleFunc("POST /track/{id}/retry", s.handleRetryTrack)
 	mux.HandleFunc("POST /playlist/{id}/retry-missing", s.handleRetryMissing)
+	mux.HandleFunc("POST /playlist/{id}/resync", s.handleResync)
 	s.srv = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return s
 }
@@ -180,6 +181,21 @@ func (s *Server) handleRetryMissing(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
+func (s *Server) handleResync(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	n, err := s.store.ResyncPlaylist(id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.log.Info("resync requested", "playlist_id", id, "demoted", n)
+	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
@@ -305,6 +321,9 @@ const pageTemplates = `
   <div><a class="muted" href="/">← all playlists</a><h1>{{.Playlist.Title}}</h1></div>
   <div style="text-align:right">
     <div class="muted">{{.Counts.InPlaylist}}/{{.Counts.Total}} placed</div>
+    <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/resync">
+      <button type="submit" title="Re-check the Navidrome playlist and re-add any songs it is missing">⟳ Re-sync</button>
+    </form>
     {{if .Counts.Missing}}
     <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/retry-missing">
       <button class="primary" type="submit">↻ Retry {{.Counts.Missing}} missing</button>

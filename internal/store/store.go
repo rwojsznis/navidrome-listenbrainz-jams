@@ -296,6 +296,31 @@ func (s *Store) RetryMissing(playlistID int64) (int, error) {
 	return int(n), tx.Commit()
 }
 
+// ResyncPlaylist forces a reconcile against Navidrome without re-downloading:
+// it demotes every in_playlist track (that has a resolved song id) back to
+// "exists" and reactivates the playlist, so the next tick re-checks the real
+// Navidrome contents and re-adds any songs the playlist is actually missing.
+// Returns how many tracks were demoted.
+func (s *Store) ResyncPlaylist(playlistID int64) (int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`UPDATE tracks SET status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE playlist_id = ? AND status = ? AND navidrome_song_id != ''`,
+		TrackExists, playlistID, TrackInPlaylist)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if _, err := tx.Exec(`UPDATE playlists SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, PlaylistPending, playlistID); err != nil {
+		return 0, err
+	}
+	return int(n), tx.Commit()
+}
+
 // resetTrackSQL clears a track's progress so it is searched/downloaded afresh.
 // The caller appends a WHERE clause and supplies the new status as the first arg.
 const resetTrackSQL = `UPDATE tracks SET status = ?, attempts = 0, last_error = '',

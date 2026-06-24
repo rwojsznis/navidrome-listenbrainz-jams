@@ -131,9 +131,11 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 		}
 		p.log.Info("created playlist", "title", pl.Title, "user", pl.NavidromeUser, "songs", len(toAdd))
 		_ = p.store.SetPlaylistNavidromeID(pl.ID, navPl.ID)
-		for _, id := range toAdd {
-			placed[id] = true
-		}
+		// Re-read the actual contents: createPlaylist can silently drop ids
+		// (e.g. a song reindexed to a new id mid-tick), so only mark tracks
+		// placed that Navidrome really has. Dropped ones stay "exists" and are
+		// retried next tick.
+		placed = p.existingSongIDs(ctx, client, navPl.ID)
 	default:
 		if pl.NavidromePlaylistID == "" {
 			_ = p.store.SetPlaylistNavidromeID(pl.ID, navPl.ID)
@@ -151,9 +153,11 @@ func (p *Pipeline) processPlaylist(ctx context.Context, pl store.Playlist) error
 				return fmt.Errorf("add to playlist: %w", err)
 			}
 			p.log.Info("backfilled playlist", "title", pl.Title, "added", len(newOnes))
-			for _, id := range newOnes {
-				placed[id] = true
-			}
+			// Re-read rather than trusting the add: Navidrome can accept the
+			// request but not persist every id. Confirming against the real
+			// contents keeps the dashboard honest and lets dropped songs (left
+			// as "exists") be re-added on a later tick instead of being stuck.
+			placed = p.existingSongIDs(ctx, client, navPl.ID)
 		}
 	}
 
