@@ -247,6 +247,26 @@ func (s *Store) TracksFor(playlistID int64) ([]Track, error) {
 	return out, rows.Err()
 }
 
+// TrackByID returns a single track, or nil if not found.
+func (s *Store) TrackByID(id int64) (*Track, error) {
+	row := s.db.QueryRow(`
+		SELECT id, playlist_id, position, recording_mbid, artist, title, status,
+		       navidrome_song_id, slskd_username, slskd_file, imported_path,
+		       attempts, last_error, updated_at
+		FROM tracks WHERE id = ?`, id)
+	var t Track
+	err := row.Scan(&t.ID, &t.PlaylistID, &t.Position, &t.RecordingMBID,
+		&t.Artist, &t.Title, &t.Status, &t.NavidromeSongID, &t.SlskdUsername,
+		&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 // RetryTrack resets a single track so the daemon re-attempts it, and reactivates
 // its playlist. Returns the playlist id (for redirecting the UI), or 0 if the
 // track does not exist.

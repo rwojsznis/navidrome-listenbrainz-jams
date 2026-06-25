@@ -71,7 +71,7 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `download.max_retries` | Search/download attempts before a track is left missing |
 | `matching.fuzzy_threshold` | 0..1 similarity required to accept a match |
 | `fingerprint.enabled` | Turn on acoustic fingerprinting + MBID tagging (default off) |
-| `fingerprint.acoustid_api_key` | Free [AcoustID](https://acoustid.org/api-key) client key (required when enabled) |
+| `fingerprint.acoustid_api_key` | Free AcoustID **application** key ([register an app](https://acoustid.org/new-application)) — required when enabled |
 | `web.listen` | Dashboard address, e.g. `:8080` (empty disables it) |
 | `feeds[]` | One entry per feed: `name`, `rss_url`, `navidrome_user`, `navidrome_pass` |
 
@@ -92,7 +92,10 @@ It **trusts the download** (the feed's own recording id is preferred when Acoust
 lists it; otherwise the best-scoring result is used) and never rejects on
 mismatch. A file AcoustID can't identify is simply left untagged — never a hard
 failure. The Docker image bundles the required `fpcalc` and `opustags` binaries;
-you only need a (free) AcoustID API key.
+you only need a free AcoustID **application** API key — register an application at
+[acoustid.org/new-application](https://acoustid.org/new-application). (This is the
+"client" key for lookups; the user/account key is only for *submitting*
+fingerprints and is rejected here with `invalid API key`.)
 
 ## Running
 

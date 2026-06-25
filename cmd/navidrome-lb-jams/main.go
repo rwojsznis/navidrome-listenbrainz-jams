@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/pipeline"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/slskd"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/tags"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/web"
 )
 
@@ -53,11 +55,52 @@ func main() {
 	scanClient := navidrome.New(cfg.Navidrome.URL, cfg.Feeds[0].NavidromeUser, cfg.Feeds[0].NavidromePass)
 	pipe := pipeline.New(st, cfg, logger)
 	dl := downloader.New(slskd.New(cfg.Slskd.URL, cfg.Slskd.APIKey), scanClient, cfg, logger)
+	var tagger *fingerprint.Service
 	if cfg.Fingerprint.Enabled {
-		dl.SetTagger(fingerprint.New(cfg, logger))
+		tagger = fingerprint.New(cfg, logger)
+		dl.SetTagger(tagger)
 		slog.Info("acoustic fingerprinting enabled")
 	}
 	pipe.SetDownloader(dl)
+
+	// Manual "tag MBID" action for a track stuck in "downloaded" (imported but
+	// not matched in Navidrome). We downloaded the file FOR a specific feed
+	// entry, so the feed's recording MBID is authoritative: write it straight
+	// into the file's tags (no AcoustID round-trip) and rescan, so resolve() can
+	// match by MBID. Falls back to AcoustID only when the feed carries no MBID.
+	// Runs in the web goroutine; safe because the tag writer/scan client are
+	// stateless and the daemon never writes a downloaded track's file.
+	tagWriter := tags.Writer{OpustagsPath: cfg.Fingerprint.OpustagsPath}
+	retag := func(ctx context.Context, trackID int64) (int64, error) {
+		t, err := st.TrackByID(trackID)
+		if err != nil || t == nil {
+			return 0, err
+		}
+		if t.ImportedPath == "" {
+			return t.PlaylistID, nil // nothing on disk to tag
+		}
+		var terr error
+		switch {
+		case t.RecordingMBID != "":
+			terr = tagWriter.WriteRecordingMBID(ctx, t.ImportedPath, t.RecordingMBID)
+		case tagger != nil:
+			terr = tagger.Tag(ctx, t.ImportedPath, "")
+		default:
+			terr = fmt.Errorf("no feed MBID and fingerprinting disabled")
+		}
+		t.LastError = ""
+		if terr != nil {
+			t.LastError = terr.Error()
+		}
+		_ = st.UpdateTrack(t)
+		if terr != nil {
+			return t.PlaylistID, terr
+		}
+		if serr := scanClient.StartScan(ctx); serr != nil {
+			logger.Warn("retag rescan", "err", serr)
+		}
+		return t.PlaylistID, nil
+	}
 
 	app := &app{
 		cfg:   cfg,
@@ -73,7 +116,7 @@ func main() {
 
 	// Read-only status dashboard (daemon mode only).
 	if cfg.Web.Listen != "" {
-		websrv := web.New(st, cfg.Web.Listen, logger)
+		websrv := web.New(st, cfg.Web.Listen, logger, retag)
 		go func() {
 			slog.Info("dashboard listening", "addr", cfg.Web.Listen)
 			if err := websrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {

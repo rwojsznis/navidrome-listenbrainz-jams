@@ -121,7 +121,7 @@ type acoustIDResponse struct {
 // string.
 func (s *Service) lookup(ctx context.Context, fingerprint string, duration float64) ([]string, error) {
 	form := url.Values{}
-	form.Set("client", s.apiKey)
+	form.Set("client", s.apiKey) // AcoustID *application* key (not the user key)
 	form.Set("duration", strconv.Itoa(int(duration+0.5)))
 	form.Set("fingerprint", fingerprint)
 	form.Set("meta", "recordingids")

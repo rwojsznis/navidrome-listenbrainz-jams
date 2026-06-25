@@ -33,7 +33,10 @@ type Config struct {
 type Fingerprint struct {
 	// Enabled turns the step on. When false, downloads are imported untagged.
 	Enabled bool `yaml:"enabled"`
-	// AcoustIDAPIKey is the (free) AcoustID client API key. Required when enabled.
+	// AcoustIDAPIKey is the free AcoustID *application* API key (the "client" key
+	// for lookups), from https://acoustid.org/new-application. NOT the user/account
+	// key, which is only for submitting fingerprints and is rejected on lookup.
+	// Required when enabled.
 	AcoustIDAPIKey string `yaml:"acoustid_api_key"`
 	// FpcalcPath is the Chromaprint fpcalc binary (default "fpcalc" via PATH).
 	FpcalcPath string `yaml:"fpcalc_path"`

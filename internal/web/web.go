@@ -16,20 +16,28 @@ import (
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
 )
 
+// RetagFunc re-runs the acoustic fingerprint/tag step on an already-imported
+// track and triggers a rescan, returning the track's playlist id (for the UI
+// redirect). It is nil when fingerprinting is disabled.
+type RetagFunc func(ctx context.Context, trackID int64) (playlistID int64, err error)
+
 // Server is the dashboard HTTP server.
 type Server struct {
 	store *store.Store
 	log   *slog.Logger
 	srv   *http.Server
+	retag RetagFunc
 }
 
-// New builds a Server listening on addr (e.g. ":8080").
-func New(st *store.Store, addr string, log *slog.Logger) *Server {
-	s := &Server{store: st, log: log}
+// New builds a Server listening on addr (e.g. ":8080"). retag may be nil to
+// disable the per-track re-fingerprint action.
+func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc) *Server {
+	s := &Server{store: st, log: log, retag: retag}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/playlist/{id}", s.handlePlaylist)
 	mux.HandleFunc("POST /track/{id}/retry", s.handleRetryTrack)
+	mux.HandleFunc("POST /track/{id}/refingerprint", s.handleRefingerprint)
 	mux.HandleFunc("POST /playlist/{id}/retry-missing", s.handleRetryMissing)
 	mux.HandleFunc("POST /playlist/{id}/resync", s.handleResync)
 	s.srv = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -144,6 +152,7 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 		"Playlist": pl,
 		"Counts":   countTracks(tracks),
 		"Tracks":   rows,
+		"CanRetag": s.retag != nil,
 	})
 }
 
@@ -196,6 +205,31 @@ func (s *Server) handleResync(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
+func (s *Server) handleRefingerprint(w http.ResponseWriter, r *http.Request) {
+	if s.retag == nil {
+		http.Error(w, "fingerprinting is disabled", http.StatusNotFound)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	playlistID, terr := s.retag(r.Context(), id)
+	if terr != nil {
+		// Non-fatal: the daemon keeps retrying via rescan. Surface it and return
+		// to the page rather than erroring out.
+		s.log.Warn("tag mbid", "track_id", id, "err", terr)
+	} else {
+		s.log.Info("tag mbid requested", "track_id", id)
+	}
+	if playlistID == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(playlistID, 10), http.StatusSeeOther)
+}
+
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
@@ -220,6 +254,11 @@ var funcs = template.FuncMap{
 		return m
 	},
 	"isMissing": func(st store.TrackStatus) bool { return st == store.TrackMissing },
+	// imported-but-unmatched tracks (stuck awaiting a Navidrome match) are the
+	// ones a manual re-fingerprint can help.
+	"isStuck": func(st store.TrackStatus) bool {
+		return st == store.TrackDownloaded || st == store.TrackImported
+	},
 	"statusClass": func(st store.TrackStatus) string {
 		switch st {
 		case store.TrackInPlaylist:
@@ -357,6 +396,11 @@ const pageTemplates = `
         {{if isMissing .Status}}
         <form class="inline" method="post" action="/track/{{.ID}}/retry">
           <button type="submit">↻ Retry</button>
+        </form>
+        {{end}}
+        {{if and $.CanRetag (isStuck .Status)}}
+        <form class="inline" method="post" action="/track/{{.ID}}/refingerprint">
+          <button type="submit" title="Write the feed's recording MBID into the file's tags + rescan so Navidrome can match this imported file">⊕ Tag MBID</button>
         </form>
         {{end}}
       </td>

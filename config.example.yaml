@@ -42,7 +42,10 @@ fingerprint:
   # recording id is written into the file's tags so Navidrome indexes it. The
   # download is trusted (no rejection on mismatch); a no-match leaves the file
   # untagged. Requires the `fpcalc` and `opustags` binaries (bundled in the
-  # Docker image) and a free AcoustID API key (https://acoustid.org/api-key).
+  # Docker image) and a free AcoustID *application* API key. Register an
+  # application at https://acoustid.org/new-application to get one — this is the
+  # "client" key used for lookups, NOT the user/account API key (which is only
+  # for submitting fingerprints and will be rejected here with "invalid API key").
   enabled: false
   acoustid_api_key: ${ACOUSTID_API_KEY:-}
   # Override only if the binaries aren't on PATH.
