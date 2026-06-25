@@ -53,6 +53,14 @@ internal/web           read-only dashboard (stdlib net/http + html/template)
 - **Least privilege.** The app writes only to `import_dir` (a subfolder of
   Navidrome's library) and reads `slskd_downloads`. Never require access to the
   whole music library.
+- **Never touch Navidrome's or slskd's databases.** They are owned by running
+  processes — querying or (worse) checkpointing/writing their SQLite files,
+  including from `sqlite3` for diagnosis, corrupts the live WAL/FTS state. (A
+  `PRAGMA wal_checkpoint(TRUNCATE)` on a live `navidrome.db` removed its
+  `-wal`/`-shm` files and broke search globally.) Read Navidrome/slskd state
+  **only** through their APIs (Subsonic `getSong`/`search3`/`getPlaylist`/
+  `getScanStatus`; slskd REST) — they return live, authoritative data. The app's
+  own `state.db` is the only database to read or write directly.
 
 ## Invariants to preserve
 
