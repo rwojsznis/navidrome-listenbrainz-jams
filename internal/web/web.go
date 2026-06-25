@@ -391,6 +391,7 @@ const pageTemplates = `
   .s-missing { background:#d04a4a33; color:#e06a6a; } .s-pending { background:#8883; color:#999; }
   .s-lyrics-synced { background:#2e9e5433; color:#2e9e54; } .s-lyrics-plain { background:#8a6d3b33; color:#b9923e; }
   .err { color:#e06a6a; font-size:.78rem; }
+  .src { font-size:.72rem; color:#888; word-break:break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
   form.inline { display:inline; margin:0; }
   button { font: inherit; font-size:.78rem; cursor:pointer; border:1px solid #8886; background:#8881; color:inherit; border-radius:6px; padding:.15rem .55rem; }
@@ -475,6 +476,7 @@ const pageTemplates = `
       <td>
         {{if .ImportedPath}}<span class="muted">{{base .ImportedPath}}</span>{{end}}
         {{if .SlskdUsername}}<span class="muted">⬇ {{.SlskdUsername}}</span>{{end}}
+        {{if .SlskdFile}}<div class="src" title="original download (peer path)">⇩ {{.SlskdFile}}</div>{{end}}
         {{if .LastError}}<div class="err">{{.LastError}}</div>{{end}}
         {{if isMissing .Status}}
         <form class="inline" method="post" action="/track/{{.ID}}/retry">
