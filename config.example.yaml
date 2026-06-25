@@ -52,6 +52,17 @@ fingerprint:
   fpcalc_path: fpcalc
   opustags_path: opustags
 
+lyrics:
+  # Optional lyrics fetching. When enabled, each freshly imported file gets a
+  # sibling "<Artist> - <Title>.lrc" written from lrclib.net (synced/timestamped
+  # lyrics preferred, plain text as fallback) so Navidrome can display them. A
+  # ".lrc" that already exists is left untouched, and a track with no lyrics
+  # (or an instrumental) is simply skipped. Best-effort: failures never block an
+  # import. Uses only the artist + title already in the feed (no extra config).
+  enabled: false
+  # lrclib API base URL. Override only to point at a self-hosted mirror.
+  lrclib_url: https://lrclib.net
+
 web:
   # Read-only status dashboard address. Empty disables it.
   listen: ":8080"

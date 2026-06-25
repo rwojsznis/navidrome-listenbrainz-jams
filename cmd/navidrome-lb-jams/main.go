@@ -18,6 +18,7 @@ import (
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/downloader"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/fingerprint"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/listenbrainz"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/lyrics"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/navidrome"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/pipeline"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/slskd"
@@ -60,6 +61,10 @@ func main() {
 		tagger = fingerprint.New(cfg, logger)
 		dl.SetTagger(tagger)
 		slog.Info("acoustic fingerprinting enabled")
+	}
+	if cfg.Lyrics.Enabled {
+		dl.SetLyrics(lyrics.New(cfg.Lyrics.LrclibURL, logger))
+		slog.Info("lyrics fetching enabled", "source", cfg.Lyrics.LrclibURL)
 	}
 	pipe.SetDownloader(dl)
 

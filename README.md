@@ -72,6 +72,8 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `matching.fuzzy_threshold` | 0..1 similarity required to accept a match |
 | `fingerprint.enabled` | Turn on acoustic fingerprinting + MBID tagging (default off) |
 | `fingerprint.acoustid_api_key` | Free AcoustID **application** key ([register an app](https://acoustid.org/new-application)) — required when enabled |
+| `lyrics.enabled` | Fetch lyrics from lrclib.net and write a sibling `.lrc` per import (default off) |
+| `lyrics.lrclib_url` | lrclib API base URL (default `https://lrclib.net`) |
 | `web.listen` | Dashboard address, e.g. `:8080` (empty disables it) |
 | `feeds[]` | One entry per feed: `name`, `rss_url`, `navidrome_user`, `navidrome_pass` |
 
@@ -96,6 +98,17 @@ you only need a free AcoustID **application** API key — register an applicatio
 [acoustid.org/new-application](https://acoustid.org/new-application). (This is the
 "client" key for lookups; the user/account key is only for *submitting*
 fingerprints and is rejected here with `invalid API key`.)
+
+### Lyrics (optional)
+
+When `lyrics.enabled` is true, each freshly imported file gets a sibling LRC
+written next to it (`Artist - Title.flac` → `Artist - Title.lrc`) so Navidrome
+can display lyrics. The track's artist + title (already in the feed) are looked
+up on [lrclib.net](https://lrclib.net) — first an exact `/api/get`, then a fuzzy
+`/api/search` fallback. **Synced** (timestamped) lyrics are preferred, with plain
+text as a fallback. An existing `.lrc` is never overwritten, and a track with no
+lyrics (or an instrumental) is skipped. Best-effort: a lookup failure never
+blocks the import. No API key or extra binary is needed.
 
 ## Running
 
@@ -152,6 +165,7 @@ internal/files          locate + move completed downloads
 internal/store          SQLite state
 internal/downloader     slskd-backed download step (pipeline.Downloader)
 internal/fingerprint    optional Chromaprint/AcoustID identification
+internal/lyrics         optional lrclib.net lyrics -> sibling .lrc
 internal/tags           write MusicBrainz recording id into FLAC/MP3/Opus
 internal/pipeline       orchestration / state machine
 internal/web            read-only status dashboard

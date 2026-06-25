@@ -38,12 +38,20 @@ type MBIDTagger interface {
 	Tag(ctx context.Context, path, feedMBID string) error
 }
 
+// LyricsWriter optionally fetches lyrics for a freshly imported file and writes
+// them as a sibling ".lrc" (no-op if one already exists). A nil writer disables
+// the step; failures are non-fatal (logged, import proceeds).
+type LyricsWriter interface {
+	WriteAlongside(ctx context.Context, musicPath, artist, title string) error
+}
+
 // Downloader drives slskd downloads for tracks missing from Navidrome.
 type Downloader struct {
 	slskd  *slskd.Client
 	scan   *navidrome.Client // admin-capable client used to trigger library scans
 	cfg    *config.Config
-	tagger MBIDTagger // optional acoustic-fingerprint tagger
+	tagger MBIDTagger   // optional acoustic-fingerprint tagger
+	lyrics LyricsWriter // optional lyrics fetcher
 	log    *slog.Logger
 
 	lastScan time.Time
@@ -51,6 +59,9 @@ type Downloader struct {
 
 // SetTagger wires the optional fingerprint/tag step (run on each imported file).
 func (d *Downloader) SetTagger(t MBIDTagger) { d.tagger = t }
+
+// SetLyrics wires the optional lyrics-fetch step (run on each imported file).
+func (d *Downloader) SetLyrics(l LyricsWriter) { d.lyrics = l }
 
 // New returns a Downloader. scan is a Navidrome client used to trigger library
 // rescans after imports (must be admin-capable).
@@ -216,6 +227,13 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	if d.tagger != nil {
 		if err := d.tagger.Tag(ctx, imported, t.RecordingMBID); err != nil {
 			d.log.Warn("fingerprint/tag", "track", t.Title, "err", err)
+		}
+	}
+	// Optionally fetch lyrics and write them as a sibling .lrc. Best-effort: a
+	// failure (or no lyrics found) leaves the file imported without lyrics.
+	if d.lyrics != nil {
+		if err := d.lyrics.WriteAlongside(ctx, imported, t.Artist, t.Title); err != nil {
+			d.log.Warn("fetch lyrics", "track", t.Title, "err", err)
 		}
 	}
 	// Remove the now-imported transfer from slskd's list (best-effort; the file

@@ -21,6 +21,7 @@ type Config struct {
 	Download     Download      `yaml:"download"`
 	Matching     Matching      `yaml:"matching"`
 	Fingerprint  Fingerprint   `yaml:"fingerprint"`
+	Lyrics       Lyrics        `yaml:"lyrics"`
 	State        State         `yaml:"state"`
 	Web          Web           `yaml:"web"`
 	Feeds        []Feed        `yaml:"feeds"`
@@ -43,6 +44,17 @@ type Fingerprint struct {
 	// OpustagsPath is the opustags binary used to tag .opus files (default
 	// "opustags" via PATH). FLAC and MP3 are tagged in pure Go.
 	OpustagsPath string `yaml:"opustags_path"`
+}
+
+// Lyrics controls the optional lyrics-fetching step. When enabled, each freshly
+// imported file gets a sibling ".lrc" written from lrclib.net (synced lyrics
+// preferred, plain as fallback) — unless a ".lrc" already exists. Disabled by
+// default; uses only the artist + title the feed already provides.
+type Lyrics struct {
+	// Enabled turns the step on.
+	Enabled bool `yaml:"enabled"`
+	// LrclibURL is the lrclib API base URL (default "https://lrclib.net").
+	LrclibURL string `yaml:"lrclib_url"`
 }
 
 // Web controls the read-only status dashboard.
@@ -110,6 +122,7 @@ var defaults = Config{
 	},
 	Matching:    Matching{FuzzyThreshold: 0.85},
 	Fingerprint: Fingerprint{FpcalcPath: "fpcalc", OpustagsPath: "opustags"},
+	Lyrics:      Lyrics{LrclibURL: "https://lrclib.net"},
 	State:       State{DBPath: "/data/state.db"},
 	Web:         Web{Listen: ":8080"},
 }
