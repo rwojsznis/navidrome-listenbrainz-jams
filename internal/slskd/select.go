@@ -31,18 +31,33 @@ type Candidate struct {
 	File     File
 }
 
-// Rank returns all acceptable candidates across the responses, ordered best
-// first. Ranking prioritizes how closely the filename matches the requested
-// title (so the original recording beats remixes/live/edited versions that carry
-// extra words), then artist presence, then format/quality. Many Soulseek peers
-// are unreachable, so callers should try candidates in order until an enqueue
-// succeeds. Locked files are ignored (they require sharing to access).
+// minStandaloneTitleTokens is how many title words a match needs to be trusted
+// when the artist is absent from the file's path. Single-word titles ("Intro",
+// "Familiar") coincidentally appear in countless unrelated files, so they need
+// the artist present; multi-word titles ("Come Together") are specific enough to
+// stand on their own (loose shared files often omit the artist from the path).
+const minStandaloneTitleTokens = 2
+
+// Rank returns the acceptable candidates across the responses, ordered best
+// first. A candidate is only acceptable if it plausibly IS the requested
+// recording (see acceptable) — never merely the least-bad search result, which
+// previously let a search for "Familiar" import an unrelated track that happened
+// to share that one word. Among acceptable candidates, ranking prioritizes how
+// closely the filename matches the requested title (so the original recording
+// beats remixes/live/edited versions that carry extra words), then artist
+// presence, then format/quality. Many Soulseek peers are unreachable, so callers
+// should try candidates in order until an enqueue succeeds. Locked files are
+// ignored (they require sharing to access).
 func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 	losslessSet := map[string]bool{"flac": true, "wav": true, "aiff": true, "alac": true, "ape": true}
 
 	titleTokens := tokenize(target.Title)
 	titleSet := toSet(titleTokens)
 	artistSet := toSet(tokenize(target.Artist))
+	// Acceptance uses the simplified title (decorations like "(original mix)" or
+	// a "feat." clause stripped) so a legitimate file that omits them isn't
+	// rejected, while still requiring the core title words to be present.
+	reqTitleTokens := tokenize(match.SimplifyTitle(target.Title))
 
 	type scored struct {
 		cand          Candidate
@@ -81,6 +96,11 @@ func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 					artistMissing++
 				}
 			}
+			// Acceptance gate: drop candidates that aren't plausibly this
+			// recording, so a tick downloads nothing rather than the wrong file.
+			if !acceptable(reqTitleTokens, nameSet, artistMissing) {
+				continue
+			}
 			extra := 0
 			for tok := range nameSet {
 				if titleSet[tok] || artistSet[tok] || isNumeric(tok) {
@@ -102,7 +122,8 @@ func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 
 	sort.SliceStable(scoredList, func(i, j int) bool {
 		a, b := scoredList[i], scoredList[j]
-		// 1. all requested title words present (reject wrong songs)
+		// 1. fewest requested title words missing (closest title among the
+		//    already-acceptable candidates; wrong songs are dropped by acceptable)
 		if a.titleMissing != b.titleMissing {
 			return a.titleMissing < b.titleMissing
 		}
@@ -148,6 +169,29 @@ func SelectBest(responses []SearchResponse, c Criteria, target Target) (username
 		return "", File{}, false
 	}
 	return ranked[0].Username, ranked[0].File, true
+}
+
+// acceptable reports whether a candidate file plausibly IS the requested
+// recording, rather than just the closest of several wrong results. It rejects:
+//   - wrong songs: any required (simplified) title word absent from the
+//     filename, e.g. "Must Be Together" vs a file named "We'll Be Together Again";
+//   - coincidental single-word titles: the title is one common word present in
+//     an unrelated file by a different artist (e.g. "Familiar" -> a Touhou track,
+//     "Intro" -> "B2 Intro Sing"), with the artist absent from the path.
+//
+// When the artist appears in the path the match is trusted outright; otherwise
+// it is trusted only if the title is specific enough to stand alone, preserving
+// downloads of loose shared files that omit the artist (e.g. "Come Together.flac").
+func acceptable(reqTitleTokens []string, nameSet map[string]bool, artistMissing int) bool {
+	for _, t := range reqTitleTokens {
+		if !nameSet[t] {
+			return false
+		}
+	}
+	if artistMissing == 0 {
+		return true
+	}
+	return len(reqTitleTokens) >= minStandaloneTitleTokens
 }
 
 // tokenize normalizes s (lowercase, strip diacritics/punctuation) and splits it

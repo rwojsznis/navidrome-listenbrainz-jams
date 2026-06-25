@@ -88,6 +88,23 @@ func Move(src, dstDir, filename string) (string, error) {
 	return dst, nil
 }
 
+// Remove deletes an imported music file and its sibling ".lrc" lyrics file (if
+// any). It is used to discard a wrong download before re-searching. A missing
+// file is not an error, so the action is idempotent. An empty path is a no-op.
+func Remove(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	lrc := strings.TrimSuffix(path, filepath.Ext(path)) + ".lrc"
+	if err := os.Remove(lrc); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // uniquePath returns p, or p with a " (n)" suffix before the extension if p
 // already exists.
 func uniquePath(p string) string {

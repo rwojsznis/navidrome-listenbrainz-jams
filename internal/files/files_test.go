@@ -19,6 +19,36 @@ func TestBaseName(t *testing.T) {
 	}
 }
 
+func TestRemoveDeletesFileAndLrc(t *testing.T) {
+	dir := t.TempDir()
+	music := filepath.Join(dir, "Artist - Title.flac")
+	lrc := filepath.Join(dir, "Artist - Title.lrc")
+	for _, p := range []string{music, lrc} {
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Remove(music); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := os.Stat(music); !os.IsNotExist(err) {
+		t.Error("music file should be gone")
+	}
+	if _, err := os.Stat(lrc); !os.IsNotExist(err) {
+		t.Error("sibling .lrc should be gone")
+	}
+}
+
+func TestRemoveIdempotentAndEmpty(t *testing.T) {
+	if err := Remove(""); err != nil {
+		t.Errorf("Remove(\"\") = %v, want nil", err)
+	}
+	// Missing file (no sibling .lrc) must not error.
+	if err := Remove(filepath.Join(t.TempDir(), "gone.mp3")); err != nil {
+		t.Errorf("Remove(missing) = %v, want nil", err)
+	}
+}
+
 func TestFindByBasename(t *testing.T) {
 	root := t.TempDir()
 	nested := filepath.Join(root, "bob", "Album")

@@ -88,6 +88,69 @@ func TestPrefersTitleMatchOverFormat(t *testing.T) {
 	}
 }
 
+// The following three are regressions from playlist 1: searches whose correct
+// file wasn't on Soulseek used to import the least-bad unrelated result. The
+// acceptance gate must now reject them so the track stays missing instead.
+
+// Single common word ("Familiar") present in an unrelated track by a different
+// artist must not be accepted.
+func TestRejectsCoincidentalSingleWordTitle(t *testing.T) {
+	target := Target{Artist: "Agnes Obel", Title: "Familiar"}
+	responses := []SearchResponse{
+		{Username: "x", Files: []File{{Filename: `Touhou\[Liz Triangle]\2011 Memoire\06 - Familiar.opus`, Extension: ".opus"}}},
+	}
+	if _, _, ok := SelectBest(responses, Criteria{FormatPreference: []string{"opus", "flac", "mp3"}}, target); ok {
+		t.Fatal("expected an unrelated 'Familiar' by a different artist to be rejected")
+	}
+}
+
+// A different song that merely shares a couple of words ("Be Together") must not
+// be accepted just because it was the closest result.
+func TestRejectsWrongSongSharingSomeWords(t *testing.T) {
+	target := Target{Artist: "D-Mad", Title: "Must Be Together (original mix)"}
+	responses := []SearchResponse{
+		{Username: "x", Files: []File{{Filename: `Frank Sinatra\Swingin' Lovers\11 We'll Be Together Again.mp3`, Extension: ".mp3", BitRate: 320}}},
+	}
+	if _, _, ok := SelectBest(responses, Criteria{FormatPreference: []string{"mp3", "flac"}}, target); ok {
+		t.Fatal("expected 'We'll Be Together Again' to be rejected for 'Must Be Together'")
+	}
+}
+
+// Single-word title with the wrong artist in the path must be rejected.
+func TestRejectsSingleWordTitleWrongArtist(t *testing.T) {
+	target := Target{Artist: "The xx", Title: "Intro"}
+	responses := []SearchResponse{
+		{Username: "x", Files: []File{{Filename: `William B. Tanner Company\The Cat - Custom Audio Traxx\B2 Intro Sing.flac`, Extension: ".flac"}}},
+	}
+	if _, _, ok := SelectBest(responses, Criteria{FormatPreference: []string{"flac", "mp3"}}, target); ok {
+		t.Fatal("expected an unrelated 'Intro' track to be rejected")
+	}
+}
+
+// A multi-word title is specific enough to accept even when the artist is absent
+// from the path — loose shared files often omit the artist. This must keep
+// working so the gate doesn't over-reject legitimate downloads.
+func TestAcceptsArtistAbsentMultiWordTitle(t *testing.T) {
+	target := Target{Artist: "The Beatles", Title: "Come Together"}
+	responses := []SearchResponse{
+		{Username: "x", Files: []File{{Filename: `Shared\Come Together.flac`, Extension: ".flac"}}},
+	}
+	if _, _, ok := SelectBest(responses, Criteria{FormatPreference: []string{"flac", "mp3"}}, target); !ok {
+		t.Fatal("expected a multi-word title to be accepted even without the artist in the path")
+	}
+}
+
+// A single-word title IS accepted when the artist is present in the path.
+func TestAcceptsSingleWordTitleWhenArtistPresent(t *testing.T) {
+	target := Target{Artist: "The xx", Title: "Intro"}
+	responses := []SearchResponse{
+		{Username: "x", Files: []File{{Filename: `The xx\xx\01 - Intro.flac`, Extension: ".flac"}}},
+	}
+	if _, _, ok := SelectBest(responses, Criteria{FormatPreference: []string{"flac", "mp3"}}, target); !ok {
+		t.Fatal("expected a single-word title with the artist present to be accepted")
+	}
+}
+
 func TestFileExtFallsBackToFilename(t *testing.T) {
 	if ext := fileExt(File{Filename: "Music\\Artist\\track.FLAC"}); ext != "flac" {
 		t.Fatalf("expected flac from filename, got %q", ext)

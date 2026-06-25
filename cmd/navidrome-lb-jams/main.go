@@ -16,6 +16,7 @@ import (
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/downloader"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/files"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/fingerprint"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/listenbrainz"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/lyrics"
@@ -139,6 +140,24 @@ func main() {
 		return t.PlaylistID, nil
 	}
 
+	// Manual "delete & restart" action for a track stuck in "downloaded" with the
+	// wrong file (slskd returned the closest, not the correct, recording). Delete
+	// the imported file (and its sibling .lrc) and reset the track so the daemon
+	// searches again — now gated by the stricter slskd acceptance check, so it
+	// won't re-import the same wrong file.
+	discard := func(ctx context.Context, trackID int64) (int64, error) {
+		t, err := st.TrackByID(trackID)
+		if err != nil || t == nil {
+			return 0, err
+		}
+		if t.ImportedPath != "" {
+			if rerr := files.Remove(t.ImportedPath); rerr != nil {
+				logger.Warn("discard remove file", "track", t.Title, "path", t.ImportedPath, "err", rerr)
+			}
+		}
+		return st.RetryTrack(trackID)
+	}
+
 	app := &app{
 		cfg:   cfg,
 		store: st,
@@ -153,7 +172,7 @@ func main() {
 
 	// Read-only status dashboard (daemon mode only).
 	if cfg.Web.Listen != "" {
-		websrv := web.New(st, cfg.Web.Listen, logger, retag, rescanLyrics)
+		websrv := web.New(st, cfg.Web.Listen, logger, retag, rescanLyrics, discard)
 		go func() {
 			slog.Info("dashboard listening", "addr", cfg.Web.Listen)
 			if err := websrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {

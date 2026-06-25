@@ -28,6 +28,11 @@ type RetagFunc func(ctx context.Context, trackID int64) (playlistID int64, err e
 // background.
 type RescanLyricsFunc func(ctx context.Context, playlistID int64) (processed int, err error)
 
+// DiscardFunc deletes a track's imported file (a wrong download) and resets the
+// track so the daemon searches for it afresh, returning the track's playlist id
+// for the UI redirect.
+type DiscardFunc func(ctx context.Context, trackID int64) (playlistID int64, err error)
+
 // Server is the dashboard HTTP server.
 type Server struct {
 	store        *store.Store
@@ -35,18 +40,21 @@ type Server struct {
 	srv          *http.Server
 	retag        RetagFunc
 	rescanLyrics RescanLyricsFunc
+	discard      DiscardFunc
 }
 
 // New builds a Server listening on addr (e.g. ":8080"). retag may be nil to
 // disable the per-track re-fingerprint action; rescanLyrics may be nil to
-// disable the per-playlist lyrics re-scan action.
-func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc, rescanLyrics RescanLyricsFunc) *Server {
-	s := &Server{store: st, log: log, retag: retag, rescanLyrics: rescanLyrics}
+// disable the per-playlist lyrics re-scan action; discard may be nil to disable
+// the per-track delete-and-restart action.
+func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc, rescanLyrics RescanLyricsFunc, discard DiscardFunc) *Server {
+	s := &Server{store: st, log: log, retag: retag, rescanLyrics: rescanLyrics, discard: discard}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/playlist/{id}", s.handlePlaylist)
 	mux.HandleFunc("POST /track/{id}/retry", s.handleRetryTrack)
 	mux.HandleFunc("POST /track/{id}/refingerprint", s.handleRefingerprint)
+	mux.HandleFunc("POST /track/{id}/discard", s.handleDiscard)
 	mux.HandleFunc("POST /playlist/{id}/retry-missing", s.handleRetryMissing)
 	mux.HandleFunc("POST /playlist/{id}/resync", s.handleResync)
 	mux.HandleFunc("POST /playlist/{id}/rescan-lyrics", s.handleRescanLyrics)
@@ -164,6 +172,7 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 		"Tracks":          rows,
 		"CanRetag":        s.retag != nil,
 		"CanRescanLyrics": s.rescanLyrics != nil,
+		"CanDiscard":      s.discard != nil,
 	})
 }
 
@@ -242,6 +251,29 @@ func (s *Server) handleRescanLyrics(w http.ResponseWriter, r *http.Request) {
 	}()
 	s.log.Info("rescan lyrics requested", "playlist_id", id)
 	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
+func (s *Server) handleDiscard(w http.ResponseWriter, r *http.Request) {
+	if s.discard == nil {
+		http.Error(w, "discard is disabled", http.StatusNotFound)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	playlistID, err := s.discard(r.Context(), id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if playlistID == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	s.log.Info("discard download requested", "track_id", id, "playlist_id", playlistID)
+	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(playlistID, 10), http.StatusSeeOther)
 }
 
 func (s *Server) handleRefingerprint(w http.ResponseWriter, r *http.Request) {
@@ -452,6 +484,11 @@ const pageTemplates = `
         {{if and $.CanRetag (isStuck .Status)}}
         <form class="inline" method="post" action="/track/{{.ID}}/refingerprint">
           <button type="submit" title="Write the feed's recording MBID into the file's tags + rescan so Navidrome can match this imported file">⊕ Tag MBID</button>
+        </form>
+        {{end}}
+        {{if and $.CanDiscard (isStuck .Status)}}
+        <form class="inline" method="post" action="/track/{{.ID}}/discard" onsubmit="return confirm('Delete the downloaded file and search for this track again?')">
+          <button type="submit" title="Delete the wrong downloaded file and search for this track again">🗑 Delete &amp; restart</button>
         </form>
         {{end}}
       </td>
