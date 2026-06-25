@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -61,7 +62,10 @@ type Track struct {
 	ImportedPath     string
 	Attempts         int
 	LastError        string
-	UpdatedAt        time.Time
+	// LyricsStatus records the outcome of the optional lyrics step: "synced",
+	// "plain", "none" (looked up, nothing found), or "" (not yet attempted).
+	LyricsStatus string
+	UpdatedAt    time.Time
 }
 
 // Store wraps the SQLite connection.
@@ -96,6 +100,7 @@ CREATE TABLE IF NOT EXISTS tracks (
 	imported_path     TEXT NOT NULL DEFAULT '',
 	attempts          INTEGER NOT NULL DEFAULT 0,
 	last_error        TEXT NOT NULL DEFAULT '',
+	lyrics_status     TEXT NOT NULL DEFAULT '',
 	updated_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(playlist_id, recording_mbid)
 );
@@ -116,7 +121,27 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
 	return &Store{db: db}, nil
+}
+
+// migrate applies column additions to databases created before those columns
+// existed. CREATE TABLE IF NOT EXISTS never alters an existing table, so each
+// added column needs an explicit, idempotent ALTER (a "duplicate column" error
+// means it is already present).
+func migrate(db *sql.DB) error {
+	adds := []string{
+		`ALTER TABLE tracks ADD COLUMN lyrics_status TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range adds {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the underlying database.
@@ -227,7 +252,7 @@ func (s *Store) TracksFor(playlistID int64) ([]Track, error) {
 	rows, err := s.db.Query(`
 		SELECT id, playlist_id, position, recording_mbid, artist, title, status,
 		       navidrome_song_id, slskd_username, slskd_file, imported_path,
-		       attempts, last_error, updated_at
+		       attempts, last_error, lyrics_status, updated_at
 		FROM tracks WHERE playlist_id = ? ORDER BY position`, playlistID)
 	if err != nil {
 		return nil, err
@@ -239,7 +264,7 @@ func (s *Store) TracksFor(playlistID int64) ([]Track, error) {
 		var t Track
 		if err := rows.Scan(&t.ID, &t.PlaylistID, &t.Position, &t.RecordingMBID,
 			&t.Artist, &t.Title, &t.Status, &t.NavidromeSongID, &t.SlskdUsername,
-			&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.UpdatedAt); err != nil {
+			&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.LyricsStatus, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -252,12 +277,12 @@ func (s *Store) TrackByID(id int64) (*Track, error) {
 	row := s.db.QueryRow(`
 		SELECT id, playlist_id, position, recording_mbid, artist, title, status,
 		       navidrome_song_id, slskd_username, slskd_file, imported_path,
-		       attempts, last_error, updated_at
+		       attempts, last_error, lyrics_status, updated_at
 		FROM tracks WHERE id = ?`, id)
 	var t Track
 	err := row.Scan(&t.ID, &t.PlaylistID, &t.Position, &t.RecordingMBID,
 		&t.Artist, &t.Title, &t.Status, &t.NavidromeSongID, &t.SlskdUsername,
-		&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.UpdatedAt)
+		&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.LyricsStatus, &t.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -343,19 +368,32 @@ func (s *Store) ResyncPlaylist(playlistID int64) (int, error) {
 
 // resetTrackSQL clears a track's progress so it is searched/downloaded afresh.
 // The caller appends a WHERE clause and supplies the new status as the first arg.
+// Lyrics status is cleared too: a reset re-downloads the file, so any previously
+// fetched lyrics state is stale.
 const resetTrackSQL = `UPDATE tracks SET status = ?, attempts = 0, last_error = '',
 	slskd_username = '', slskd_file = '', navidrome_song_id = '',
-	imported_path = '', updated_at = CURRENT_TIMESTAMP`
+	imported_path = '', lyrics_status = '', updated_at = CURRENT_TIMESTAMP`
 
 // UpdateTrack persists the mutable fields of a track.
 func (s *Store) UpdateTrack(t *Track) error {
 	_, err := s.db.Exec(`
 		UPDATE tracks SET
 			status = ?, navidrome_song_id = ?, slskd_username = ?, slskd_file = ?,
-			imported_path = ?, attempts = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+			imported_path = ?, attempts = ?, last_error = ?, lyrics_status = ?,
+			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		t.Status, t.NavidromeSongID, t.SlskdUsername, t.SlskdFile,
-		t.ImportedPath, t.Attempts, t.LastError, t.ID)
+		t.ImportedPath, t.Attempts, t.LastError, t.LyricsStatus, t.ID)
+	return err
+}
+
+// SetLyricsStatus updates only a track's lyrics_status column, leaving every
+// other field (and updated_at) untouched. This is used by the manual lyrics
+// re-scan, which can run concurrently with the daemon's own track updates;
+// touching a single column avoids clobbering pipeline progress with a stale
+// snapshot.
+func (s *Store) SetLyricsStatus(trackID int64, status string) error {
+	_, err := s.db.Exec(`UPDATE tracks SET lyrics_status = ? WHERE id = ?`, status, trackID)
 	return err
 }
 

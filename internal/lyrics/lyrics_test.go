@@ -105,8 +105,12 @@ func TestWriteAlongsideWritesSiblingLrc(t *testing.T) {
 	s := testService(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"syncedLyrics":"[00:01.00] words","instrumental":false}`))
 	})
-	if err := s.WriteAlongside(context.Background(), music, "Lorde", "Royals"); err != nil {
+	status, err := s.WriteAlongside(context.Background(), music, "Lorde", "Royals")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if status != StatusSynced {
+		t.Errorf("status = %q, want %q", status, StatusSynced)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "Lorde - Royals.lrc"))
 	if err != nil {
@@ -129,11 +133,15 @@ func TestWriteAlongsideSkipsExistingLrc(t *testing.T) {
 		called = true
 		w.Write([]byte(`{"plainLyrics":"new"}`))
 	})
-	if err := s.WriteAlongside(context.Background(), music, "A", "B"); err != nil {
+	status, err := s.WriteAlongside(context.Background(), music, "A", "B")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if called {
 		t.Error("should not call API when .lrc already exists")
+	}
+	if status != StatusPlain {
+		t.Errorf("status = %q, want %q (existing untimestamped .lrc)", status, StatusPlain)
 	}
 	got, _ := os.ReadFile(lrc)
 	if string(got) != "existing" {
@@ -153,8 +161,12 @@ func TestWriteAlongsideNoLyricsNoFile(t *testing.T) {
 			w.Write([]byte(`[]`))
 		}
 	})
-	if err := s.WriteAlongside(context.Background(), music, "A", "B"); err != nil {
+	status, err := s.WriteAlongside(context.Background(), music, "A", "B")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if status != StatusNone {
+		t.Errorf("status = %q, want %q", status, StatusNone)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "song.lrc")); !os.IsNotExist(err) {
 		t.Error("expected no .lrc file when no lyrics found")

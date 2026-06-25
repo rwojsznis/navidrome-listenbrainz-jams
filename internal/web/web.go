@@ -21,18 +21,27 @@ import (
 // redirect). It is nil when fingerprinting is disabled.
 type RetagFunc func(ctx context.Context, trackID int64) (playlistID int64, err error)
 
+// RescanLyricsFunc fetches missing lyrics for every imported track in a
+// playlist, persisting each track's lyrics status. It returns how many tracks
+// it processed. It is nil when lyrics fetching is disabled. It may be slow (one
+// network lookup per track without a local .lrc), so callers run it in the
+// background.
+type RescanLyricsFunc func(ctx context.Context, playlistID int64) (processed int, err error)
+
 // Server is the dashboard HTTP server.
 type Server struct {
-	store *store.Store
-	log   *slog.Logger
-	srv   *http.Server
-	retag RetagFunc
+	store        *store.Store
+	log          *slog.Logger
+	srv          *http.Server
+	retag        RetagFunc
+	rescanLyrics RescanLyricsFunc
 }
 
 // New builds a Server listening on addr (e.g. ":8080"). retag may be nil to
-// disable the per-track re-fingerprint action.
-func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc) *Server {
-	s := &Server{store: st, log: log, retag: retag}
+// disable the per-track re-fingerprint action; rescanLyrics may be nil to
+// disable the per-playlist lyrics re-scan action.
+func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc, rescanLyrics RescanLyricsFunc) *Server {
+	s := &Server{store: st, log: log, retag: retag, rescanLyrics: rescanLyrics}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/playlist/{id}", s.handlePlaylist)
@@ -40,6 +49,7 @@ func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc) *Serve
 	mux.HandleFunc("POST /track/{id}/refingerprint", s.handleRefingerprint)
 	mux.HandleFunc("POST /playlist/{id}/retry-missing", s.handleRetryMissing)
 	mux.HandleFunc("POST /playlist/{id}/resync", s.handleResync)
+	mux.HandleFunc("POST /playlist/{id}/rescan-lyrics", s.handleRescanLyrics)
 	s.srv = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return s
 }
@@ -149,10 +159,11 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Position < rows[j].Position })
 
 	s.render(w, "detail", map[string]any{
-		"Playlist": pl,
-		"Counts":   countTracks(tracks),
-		"Tracks":   rows,
-		"CanRetag": s.retag != nil,
+		"Playlist":        pl,
+		"Counts":          countTracks(tracks),
+		"Tracks":          rows,
+		"CanRetag":        s.retag != nil,
+		"CanRescanLyrics": s.rescanLyrics != nil,
 	})
 }
 
@@ -202,6 +213,34 @@ func (s *Server) handleResync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("resync requested", "playlist_id", id, "demoted", n)
+	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
+func (s *Server) handleRescanLyrics(w http.ResponseWriter, r *http.Request) {
+	if s.rescanLyrics == nil {
+		http.Error(w, "lyrics fetching is disabled", http.StatusNotFound)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// A playlist can hold dozens of tracks, each needing a network lookup, so run
+	// it in the background and return immediately; the dashboard reflects the new
+	// statuses on the next reload. A detached context (not the request's) keeps it
+	// alive after the redirect.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		n, err := s.rescanLyrics(ctx, id)
+		if err != nil {
+			s.log.Warn("rescan lyrics", "playlist_id", id, "err", err)
+			return
+		}
+		s.log.Info("rescan lyrics done", "playlist_id", id, "processed", n)
+	}()
+	s.log.Info("rescan lyrics requested", "playlist_id", id)
 	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
@@ -318,6 +357,7 @@ const pageTemplates = `
   .s-inplaylist { background:#2e9e5433; color:#2e9e54; } .s-exists { background:#5b9e2e33; color:#6fae3e; }
   .s-downloading { background:#2e74d033; color:#4a8fe0; } .s-downloaded { background:#2eb6b633; color:#2eb6b6; }
   .s-missing { background:#d04a4a33; color:#e06a6a; } .s-pending { background:#8883; color:#999; }
+  .s-lyrics-synced { background:#2e9e5433; color:#2e9e54; } .s-lyrics-plain { background:#8a6d3b33; color:#b9923e; }
   .err { color:#e06a6a; font-size:.78rem; }
   .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
   form.inline { display:inline; margin:0; }
@@ -363,6 +403,11 @@ const pageTemplates = `
     <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/resync">
       <button type="submit" title="Re-check the Navidrome playlist and re-add any songs it is missing">⟳ Re-sync</button>
     </form>
+    {{if .CanRescanLyrics}}
+    <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/rescan-lyrics">
+      <button type="submit" title="Fetch missing lyrics (.lrc) for every imported track in this playlist (runs in the background)">♪ Re-scan lyrics</button>
+    </form>
+    {{end}}
     {{if .Counts.Missing}}
     <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/retry-missing">
       <button class="primary" type="submit">↻ Retry {{.Counts.Missing}} missing</button>
@@ -379,7 +424,7 @@ const pageTemplates = `
   {{if .Counts.Pending}}<span>… {{.Counts.Pending}}</span>{{end}}
 </p>
 <table>
-  <thead><tr><th>#</th><th>Artist</th><th>Title</th><th>Status</th><th>Try</th><th>Updated</th><th>Detail</th></tr></thead>
+  <thead><tr><th>#</th><th>Artist</th><th>Title</th><th>Status</th><th>Lyrics</th><th>Try</th><th>Updated</th><th>Detail</th></tr></thead>
   <tbody>
   {{range .Tracks}}
     <tr>
@@ -387,6 +432,12 @@ const pageTemplates = `
       <td>{{.Artist}}</td>
       <td>{{.Title}}</td>
       <td><span class="st {{statusClass .Status}}">{{.Status}}</span></td>
+      <td>
+        {{if eq .LyricsStatus "synced"}}<span class="st s-lyrics-synced">♪ synced</span>
+        {{else if eq .LyricsStatus "plain"}}<span class="st s-lyrics-plain">plain</span>
+        {{else if eq .LyricsStatus "none"}}<span class="muted">none</span>
+        {{else}}<span class="muted">—</span>{{end}}
+      </td>
       <td class="muted">{{if .Attempts}}{{.Attempts}}{{else}}—{{end}}</td>
       <td class="muted">{{shortTime .UpdatedAt}}</td>
       <td>

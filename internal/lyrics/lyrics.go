@@ -18,12 +18,26 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
 // userAgent identifies this client to lrclib, as their docs request.
 const userAgent = "navidrome-listenbrainz-jams (https://github.com/rwojsznis/navidrome-listenbrainz-jams)"
+
+// Status values recorded for a track after a lyrics attempt. They are plain
+// strings so callers can persist them directly without importing this package's
+// type.
+const (
+	StatusSynced = "synced" // timestamped .lrc present
+	StatusPlain  = "plain"  // plain-text .lrc present
+	StatusNone   = "none"   // looked up, no lyrics found
+)
+
+// syncedLine matches an LRC timestamp tag like "[00:12.34]", used to classify an
+// existing .lrc file as synced vs plain.
+var syncedLine = regexp.MustCompile(`\[\d{1,2}:\d{2}(\.\d{1,3})?\]`)
 
 // Service fetches lyrics from an lrclib-compatible API.
 type Service struct {
@@ -158,26 +172,40 @@ func (s *Service) do(ctx context.Context, path string) ([]byte, int, error) {
 
 // WriteAlongside fetches lyrics for the track and writes them as a sibling
 // ".lrc" file next to musicPath (e.g. "Artist - Title.flac" ->
-// "Artist - Title.lrc"). It is a no-op if a ".lrc" already exists, or if no
-// lyrics are found. Implements downloader.LyricsWriter.
-func (s *Service) WriteAlongside(ctx context.Context, musicPath, artist, title string) error {
+// "Artist - Title.lrc"). It returns the resulting lyrics status (StatusSynced /
+// StatusPlain / StatusNone) so the caller can record it. A ".lrc" that already
+// exists is left untouched and classified from its contents (no network call).
+// Implements downloader.LyricsWriter.
+func (s *Service) WriteAlongside(ctx context.Context, musicPath, artist, title string) (string, error) {
 	lrcPath := strings.TrimSuffix(musicPath, filepath.Ext(musicPath)) + ".lrc"
-	if _, err := os.Stat(lrcPath); err == nil {
-		return nil // already present; don't overwrite or refetch
+	if existing, err := os.ReadFile(lrcPath); err == nil {
+		// Already present; don't overwrite or refetch, just classify it.
+		return classify(string(existing)), nil
 	}
 
 	text, synced, ok, err := s.Fetch(ctx, artist, title)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !ok {
 		s.log.Debug("no lyrics found", "artist", artist, "title", title)
-		return nil
+		return StatusNone, nil
 	}
 
 	if err := os.WriteFile(lrcPath, []byte(text), 0o644); err != nil {
-		return fmt.Errorf("write lrc: %w", err)
+		return "", fmt.Errorf("write lrc: %w", err)
 	}
 	s.log.Info("lyrics written", "path", lrcPath, "synced", synced)
-	return nil
+	if synced {
+		return StatusSynced, nil
+	}
+	return StatusPlain, nil
+}
+
+// classify reports whether .lrc content is synced (has timestamp tags) or plain.
+func classify(content string) string {
+	if syncedLine.MatchString(content) {
+		return StatusSynced
+	}
+	return StatusPlain
 }

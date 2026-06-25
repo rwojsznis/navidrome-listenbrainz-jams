@@ -110,6 +110,13 @@ text as a fallback. An existing `.lrc` is never overwritten, and a track with no
 lyrics (or an instrumental) is skipped. Best-effort: a lookup failure never
 blocks the import. No API key or extra binary is needed.
 
+Each track's lyrics state (`synced` / `plain` / `none` / blank if not yet
+attempted) is stored and shown in the dashboard's per-playlist table. A **Re-scan
+lyrics** button on the playlist page fetches lyrics for every imported track that
+doesn't already have a `.lrc` — handy for backfilling tracks imported before the
+feature was enabled. It runs in the background; reload the page to see updated
+statuses.
+
 ## Running
 
 ### Docker (recommended, e.g. on a NAS)

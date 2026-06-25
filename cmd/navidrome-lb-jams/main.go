@@ -62,9 +62,41 @@ func main() {
 		dl.SetTagger(tagger)
 		slog.Info("acoustic fingerprinting enabled")
 	}
+	var rescanLyrics web.RescanLyricsFunc
 	if cfg.Lyrics.Enabled {
-		dl.SetLyrics(lyrics.New(cfg.Lyrics.LrclibURL, logger))
+		lyricsSvc := lyrics.New(cfg.Lyrics.LrclibURL, logger)
+		dl.SetLyrics(lyricsSvc)
 		slog.Info("lyrics fetching enabled", "source", cfg.Lyrics.LrclibURL)
+
+		// Manual "re-scan lyrics" action: fetch a sibling .lrc for every imported
+		// track in a playlist that doesn't already have one, recording the result.
+		// Runs in the web goroutine; SetLyricsStatus touches only the lyrics column
+		// so it can't clobber concurrent pipeline progress on the same track.
+		rescanLyrics = func(ctx context.Context, playlistID int64) (int, error) {
+			tracks, err := st.TracksFor(playlistID)
+			if err != nil {
+				return 0, err
+			}
+			processed := 0
+			for i := range tracks {
+				t := &tracks[i]
+				if t.ImportedPath == "" {
+					continue // nothing on disk to attach lyrics to yet
+				}
+				status, err := lyricsSvc.WriteAlongside(ctx, t.ImportedPath, t.Artist, t.Title)
+				if err != nil {
+					logger.Warn("rescan lyrics", "track", t.Title, "err", err)
+					continue
+				}
+				if status != t.LyricsStatus {
+					if err := st.SetLyricsStatus(t.ID, status); err != nil {
+						logger.Warn("save lyrics status", "track", t.Title, "err", err)
+					}
+				}
+				processed++
+			}
+			return processed, nil
+		}
 	}
 	pipe.SetDownloader(dl)
 
@@ -121,7 +153,7 @@ func main() {
 
 	// Read-only status dashboard (daemon mode only).
 	if cfg.Web.Listen != "" {
-		websrv := web.New(st, cfg.Web.Listen, logger, retag)
+		websrv := web.New(st, cfg.Web.Listen, logger, retag, rescanLyrics)
 		go func() {
 			slog.Info("dashboard listening", "addr", cfg.Web.Listen)
 			if err := websrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {

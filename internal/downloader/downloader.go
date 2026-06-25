@@ -42,7 +42,9 @@ type MBIDTagger interface {
 // them as a sibling ".lrc" (no-op if one already exists). A nil writer disables
 // the step; failures are non-fatal (logged, import proceeds).
 type LyricsWriter interface {
-	WriteAlongside(ctx context.Context, musicPath, artist, title string) error
+	// WriteAlongside writes a sibling .lrc for the imported file and returns the
+	// resulting lyrics status ("synced"/"plain"/"none") to record on the track.
+	WriteAlongside(ctx context.Context, musicPath, artist, title string) (string, error)
 }
 
 // Downloader drives slskd downloads for tracks missing from Navidrome.
@@ -232,8 +234,10 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 	// Optionally fetch lyrics and write them as a sibling .lrc. Best-effort: a
 	// failure (or no lyrics found) leaves the file imported without lyrics.
 	if d.lyrics != nil {
-		if err := d.lyrics.WriteAlongside(ctx, imported, t.Artist, t.Title); err != nil {
+		if status, err := d.lyrics.WriteAlongside(ctx, imported, t.Artist, t.Title); err != nil {
 			d.log.Warn("fetch lyrics", "track", t.Title, "err", err)
+		} else {
+			t.LyricsStatus = status
 		}
 	}
 	// Remove the now-imported transfer from slskd's list (best-effort; the file
