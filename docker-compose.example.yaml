@@ -6,7 +6,9 @@
 #   - A dedicated import folder INSIDE Navidrome's library -> mounted read-write.
 #     Mount only this subfolder (not the whole library) so the service can't
 #     touch the rest of your collection.
-#   - slskd's completed downloads -> mounted read-only (files are read+moved out)
+#   - slskd's completed downloads -> mounted read-write. The service MOVES
+#     completed files out of here into the import folder, so it must be able to
+#     delete the originals (a read-only mount would leave duplicates behind).
 
 services:
   navidrome-lb-jams:
@@ -27,7 +29,8 @@ services:
       # A subfolder of Navidrome's library (which scans /volume1/music). Only
       # this folder is exposed to the service, read-write.
       - /volume1/music/lb-jams:/import
-      - /volume1/docker/slskd/downloads:/downloads:ro  # slskd completed downloads
+      # slskd completed downloads. Read-write: the service moves files out.
+      - /volume1/docker/slskd/downloads:/downloads
     # If Navidrome/slskd run in Docker, put this service on their network so it
     # can reach them by service name; otherwise use the NAS host IP in config.yaml.
     # networks: [media]

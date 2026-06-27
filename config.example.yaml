@@ -13,7 +13,8 @@ slskd:
   api_key: ${SLSKD_API_KEY}
 
 paths:
-  # slskd's completed-downloads directory (mount read-only).
+  # slskd's completed-downloads directory (mount read-write — files are moved
+  # out of here into import_dir, so the service must be able to delete them).
   slskd_downloads: /downloads
   # Directory where imported files are written (mount read-write). It must be a
   # subfolder of Navidrome's music library so Navidrome indexes the files — mount
