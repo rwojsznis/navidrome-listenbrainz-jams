@@ -66,6 +66,26 @@ type Web struct {
 // Navidrome holds connection details for the Navidrome (Subsonic) instance.
 type Navidrome struct {
 	URL string `yaml:"url"`
+	// AdminUser / AdminPass are optional credentials used for operations that
+	// require an admin-capable user — currently triggering library rescans
+	// (Subsonic startScan, which returns "not authorized" for regular users).
+	// When omitted, the first feed's credentials are used (which then must be
+	// admin). Set these when your feed users are not admins.
+	AdminUser string `yaml:"admin_user"`
+	AdminPass string `yaml:"admin_pass"`
+}
+
+// ScanUser returns the credentials to use for admin-only operations such as
+// library rescans: the dedicated admin credentials when configured, otherwise
+// the first feed's credentials as a fallback.
+func (c *Config) ScanUser() (user, pass string) {
+	if c.Navidrome.AdminUser != "" {
+		return c.Navidrome.AdminUser, c.Navidrome.AdminPass
+	}
+	if len(c.Feeds) > 0 {
+		return c.Feeds[0].NavidromeUser, c.Feeds[0].NavidromePass
+	}
+	return "", ""
 }
 
 // Slskd holds connection details for the slskd instance.

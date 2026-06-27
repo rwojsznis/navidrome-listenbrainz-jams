@@ -7,6 +7,12 @@ poll_interval: 30m
 
 navidrome:
   url: http://navidrome:4533
+  # Optional admin credentials, used only for triggering library rescans
+  # (Subsonic startScan requires an admin user; regular users get a
+  # "not authorized" error). If omitted, the first feed's user is used and must
+  # itself be an admin. Set these when your feed users are not admins.
+  # admin_user: admin
+  # admin_pass: ${NAVIDROME_ADMIN_PASS}
 
 slskd:
   url: http://slskd:5030

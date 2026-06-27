@@ -52,9 +52,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Library rescans (Subsonic startScan) require an admin-capable user, so we
-	// use the first feed's credentials.
-	scanClient := navidrome.New(cfg.Navidrome.URL, cfg.Feeds[0].NavidromeUser, cfg.Feeds[0].NavidromePass)
+	// Library rescans (Subsonic startScan) require an admin-capable user: the
+	// dedicated navidrome.admin_user/admin_pass when set, else the first feed's
+	// credentials (which then must belong to an admin).
+	scanUser, scanPass := cfg.ScanUser()
+	scanClient := navidrome.New(cfg.Navidrome.URL, scanUser, scanPass)
 	pipe := pipeline.New(st, cfg, logger)
 	dl := downloader.New(slskd.New(cfg.Slskd.URL, cfg.Slskd.APIKey), scanClient, cfg, logger)
 	var tagger *fingerprint.Service
