@@ -1,0 +1,36 @@
+# Only cmd/, internal/, go.mod and go.sum are needed to build the binary.
+# Everything below is noise (or secrets) that would otherwise be sent to the
+# Docker daemon by `COPY . .`.
+
+# VCS / tooling / editor
+.git
+.github
+.gitignore
+.claude
+.idea
+.DS_Store
+AGENTS.md
+mise.toml
+
+# Local dev data (Navidrome db, slskd db, music, downloads, state) — can be large
+data/
+
+# Secrets — never bake these into an image
+config.local.yaml
+
+# Local dev / deploy stack, not part of the build (includes deploy/.env secrets)
+deploy/
+docker-compose.example.yaml
+config.example.yaml
+
+# Docs
+docs/
+README.md
+
+# Build artifacts
+navidrome-lb-jams
+dist/
+
+# This file and the Dockerfile itself
+.dockerignore
+Dockerfile
