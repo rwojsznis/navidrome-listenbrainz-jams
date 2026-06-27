@@ -14,8 +14,9 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/navidrome-lb-jams ./cmd/navi
 # (libchromaprint-tools) and opustags — so we use debian-slim instead of
 # distroless-static to carry them. ca-certificates covers HTTPS to
 # ListenBrainz/MusicBrainz/AcoustID. If you never enable fingerprinting, these
-# packages are dead weight but harmless.
-FROM debian:12-slim
+# packages are dead weight but harmless. trixie (not bookworm) is required:
+# opustags first ships in Debian 13.
+FROM debian:trixie-slim
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates libchromaprint-tools opustags \
 	&& rm -rf /var/lib/apt/lists/*
