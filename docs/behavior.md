@@ -9,18 +9,23 @@ The daemon runs on a timer (`poll_interval`). Each tick:
 
 1. **Discover** — fetch every *configured* feed and upsert its entries/tracks
    into the SQLite store (idempotent; see below).
-2. **Process** each active playlist through three phases:
+2. **Assemble (fast pass, across *all* playlists)** — for each pending playlist:
    1. **Resolve** — look up each unplaced track in Navidrome (MusicBrainz
       recording-id match, else fuzzy; see *Matching strategy*) and mark the ones
       found.
    2. **Create / backfill** — create the Navidrome playlist (or add newly
-      resolved tracks to the existing one).
-   3. **Download** — for tracks still missing, advance the slskd download state
-      machine (search → enqueue → poll → import).
+      resolved tracks to the existing one), then re-read its actual contents to
+      confirm what landed (see *Honest placed count*).
+3. **Download (slow pass, across *all* playlists)** — for tracks still missing,
+   advance the slskd download state machine (search → enqueue → poll → import).
 
-Phases 1–2 are fast; phase 3 is the slow part and is rate-limited (below). All
-state is persisted, so a restart resumes exactly where it left off — nothing is
-re-downloaded.
+The two passes run **across all playlists**, not playlist-by-playlist: every
+playlist is assembled first, then every playlist downloads. This matters because
+the download pass is slow (each slskd search can wait 75–105s) — doing it
+per-playlist would let one busy playlist starve fast backfills/re-syncs
+elsewhere. The assemble pass is cheap; the download pass is the slow part and is
+rate-limited (below). All state is persisted, so a restart resumes exactly where
+it left off — nothing is re-downloaded.
 
 If a tick takes longer than `poll_interval`, ticks simply run back-to-back (the
 timer coalesces) — they never overlap.
@@ -57,9 +62,11 @@ missing ──(retried next tick, until max_retries)──▶ …
 
 - `exists` = found in Navidrome, song id known; gets added to the playlist in
   the same tick.
-- `downloaded` = file moved into the import dir (and, if fingerprinting is on,
-  tagged with its MusicBrainz recording id), awaiting a Navidrome rescan; it's
-  re-resolved on a later tick once indexed.
+- `downloaded` (and its synonym `imported`) = file moved into the import dir
+  (and, if fingerprinting/lyrics are on, tagged with its MusicBrainz recording id
+  and given a sibling `.lrc`), awaiting a Navidrome rescan; it's re-resolved on a
+  later tick once indexed. The downloader keeps re-triggering a (throttled)
+  rescan for any track left in this state, so it self-heals across restarts.
 - `missing` = not found and not (yet) downloadable. Re-attempted each tick until
   `attempts` reaches `max_retries`, then left alone (still revivable via Retry).
 
@@ -72,6 +79,43 @@ missing ──(retried next tick, until max_retries)──▶ …
   re-runs never create duplicates.
 - Each new week is a **new feed entry** → a **new playlist row**, processed
   fresh. Old weeks remain in their final state.
+
+## Honest placed count
+
+A track is marked `in_playlist` only after the create/backfill step **re-reads
+the Navidrome playlist** (`getPlaylist`) and confirms the song id is actually
+present. Navidrome can silently drop ids it's handed — e.g. when a freshly
+imported track is still being indexed, or when ids churn during a reindex — so
+the count would otherwise drift above what the playlist really contains. Dropped
+ids stay `exists` and are re-added on the next tick (self-healing), and the
+dashboard's "N/M placed" stays truthful.
+
+## Dashboard actions
+
+The dashboard is read-only except for a few explicit recovery buttons. Each one
+resets state in the store; the running daemon picks the change up on its next
+tick (they share the SQLite store).
+
+- **Retry** (per missing track) / **Retry N missing** (per playlist) — reset the
+  track(s) to `pending` (attempts/error cleared) **and** flip the playlist back
+  to `pending`. The only way to revive a `done` playlist or re-attempt
+  retry-exhausted tracks.
+- **Re-sync** (per playlist) — demote every `in_playlist` track back to `exists`
+  (keeping its song id — **no re-download**) and reactivate the playlist, forcing
+  a fresh re-add from actual Navidrome contents. Use it when a `done` playlist's
+  count drifted or songs were dropped.
+- **Tag MBID** (per stuck `downloaded`/`imported` track) — write the feed's known
+  recording MBID straight into the imported file's tags and trigger a rescan, so
+  the next resolve matches by id. Fixes files whose tags carry decorations that
+  defeat fuzzy matching (e.g. scene-tag titles, translated titles). Falls back to
+  AcoustID identification only if the feed track has no recording MBID.
+- **Delete & restart** (per stuck `downloaded`/`imported` track) — delete the
+  wrong imported file **and its sibling `.lrc`**, then reset the track so it is
+  searched and downloaded again from scratch. Use it when the downloader fetched
+  the wrong file (wrong version, mislabeled rip).
+- **Re-scan lyrics** (per playlist) — fetch lyrics for every imported track that
+  doesn't already have a `.lrc`. Runs in the background; reload to see updated
+  statuses. Handy for backfilling tracks imported before lyrics were enabled.
 
 ## Adding / removing / renaming a feed
 

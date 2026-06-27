@@ -34,10 +34,17 @@ search/ranking strategy, cleanup, and failure handling — see
 
 ## Status dashboard
 
-A read-only web UI (default `http://localhost:8080`, set via `web.listen`) lists
-each discovered playlist with a progress bar, and a click-through page shows every
-track's state (in playlist / downloading / downloaded / missing / pending),
-attempts, last error, and the imported filename.
+A mostly read-only web UI (default `http://localhost:8080`, set via `web.listen`)
+lists each discovered playlist with a progress bar, and a click-through page shows
+every track's state (in playlist / downloading / downloaded / missing / pending),
+lyrics status, attempts, last error, the imported filename, and the original
+slskd download path it came from.
+
+A few recovery buttons let you nudge stuck tracks — **Retry** a missing track or
+all missing tracks, **Re-sync** a playlist against Navidrome, **Tag MBID** to
+force-match an imported-but-unresolved file, **Delete & restart** to throw away a
+wrong download and search again, and **Re-scan lyrics** to backfill `.lrc` files.
+See [`docs/behavior.md`](docs/behavior.md#dashboard-actions) for what each does.
 
 ## How tracks flow between services
 
@@ -67,8 +74,9 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `paths.slskd_downloads` | slskd's completed-downloads dir (mount read-only) |
 | `paths.import_dir` | Dedicated import dir, a subfolder of Navidrome's library (mount read-write) |
 | `download.format_preference` | Ordered preferred formats, e.g. `[flac, mp3]` |
-| `download.min_bitrate` | Minimum kbps for lossy candidates |
+| `download.min_bitrate` | Minimum kbps for lossy candidates (lossless exempt) |
 | `download.max_retries` | Search/download attempts before a track is left missing |
+| `download.per_track_timeout` | How long a single transfer may stall before it's abandoned (default 2h) |
 | `matching.fuzzy_threshold` | 0..1 similarity required to accept a match |
 | `fingerprint.enabled` | Turn on acoustic fingerprinting + MBID tagging (default off) |
 | `fingerprint.acoustid_api_key` | Free AcoustID **application** key ([register an app](https://acoustid.org/new-application)) — required when enabled |
@@ -143,9 +151,9 @@ go run ./cmd/navidrome-lb-jams -config config.yaml -once  # single pass, then ex
 ## Networking note (important for downloads)
 
 slskd needs its **Soulseek listening port (default 50300) reachable** for searches
-to return results and downloads to work — forward it on your router. Behind
-**CGNAT (e.g. mobile internet)** inbound connections are impossible, so searches
-return nothing; the Navidrome-matching path still works, but downloads won't.
+to return results and downloads to work — forward it on your router. If inbound
+connections can't reach slskd, searches return nothing and downloads won't work;
+the Navidrome-matching path (resolving tracks already in your library) still does.
 
 ## Development
 
@@ -168,7 +176,7 @@ internal/listenbrainz   Atom feed fetch + track parser
 internal/navidrome      Subsonic API client
 internal/slskd          slskd REST client + candidate ranking
 internal/match          fuzzy artist/title matching
-internal/files          locate + move completed downloads
+internal/files          locate, move, and delete completed downloads
 internal/store          SQLite state
 internal/downloader     slskd-backed download step (pipeline.Downloader)
 internal/fingerprint    optional Chromaprint/AcoustID identification
