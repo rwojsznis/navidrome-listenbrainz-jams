@@ -241,6 +241,20 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, songIDs [
 	return err
 }
 
+// ReplacePlaylist overwrites an existing playlist's tracks with exactly the
+// given song ids, in the given order. Subsonic/Navidrome treats createPlaylist
+// with a playlistId as "replace the contents of this playlist", which lets us
+// reorder an assembled playlist to feed order in a single call.
+func (c *Client) ReplacePlaylist(ctx context.Context, playlistID string, songIDs []string) error {
+	p := url.Values{}
+	p.Set("playlistId", playlistID)
+	for _, id := range songIDs {
+		p.Add("songId", id)
+	}
+	_, err := c.get(ctx, "createPlaylist", p)
+	return err
+}
+
 // StartScan triggers a library scan.
 func (c *Client) StartScan(ctx context.Context) error {
 	_, err := c.get(ctx, "startScan", nil)

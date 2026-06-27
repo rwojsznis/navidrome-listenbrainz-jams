@@ -33,6 +33,12 @@ type RescanLyricsFunc func(ctx context.Context, playlistID int64) (processed int
 // for the UI redirect.
 type DiscardFunc func(ctx context.Context, trackID int64) (playlistID int64, err error)
 
+// ResortFunc rewrites the Navidrome playlist so its tracks are in feed order.
+// Downloads complete out of order, so songs land in the playlist as they arrive;
+// this resorts an already-assembled playlist on demand. It is nil when no
+// Navidrome pipeline is wired in.
+type ResortFunc func(ctx context.Context, playlistID int64) error
+
 // Server is the dashboard HTTP server.
 type Server struct {
 	store        *store.Store
@@ -41,14 +47,16 @@ type Server struct {
 	retag        RetagFunc
 	rescanLyrics RescanLyricsFunc
 	discard      DiscardFunc
+	resort       ResortFunc
 }
 
 // New builds a Server listening on addr (e.g. ":8080"). retag may be nil to
 // disable the per-track re-fingerprint action; rescanLyrics may be nil to
 // disable the per-playlist lyrics re-scan action; discard may be nil to disable
-// the per-track delete-and-restart action.
-func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc, rescanLyrics RescanLyricsFunc, discard DiscardFunc) *Server {
-	s := &Server{store: st, log: log, retag: retag, rescanLyrics: rescanLyrics, discard: discard}
+// the per-track delete-and-restart action; resort may be nil to disable the
+// per-playlist sort-to-feed-order action.
+func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc, rescanLyrics RescanLyricsFunc, discard DiscardFunc, resort ResortFunc) *Server {
+	s := &Server{store: st, log: log, retag: retag, rescanLyrics: rescanLyrics, discard: discard, resort: resort}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/playlist/{id}", s.handlePlaylist)
@@ -58,6 +66,7 @@ func New(st *store.Store, addr string, log *slog.Logger, retag RetagFunc, rescan
 	mux.HandleFunc("POST /playlist/{id}/retry-missing", s.handleRetryMissing)
 	mux.HandleFunc("POST /playlist/{id}/resync", s.handleResync)
 	mux.HandleFunc("POST /playlist/{id}/rescan-lyrics", s.handleRescanLyrics)
+	mux.HandleFunc("POST /playlist/{id}/resort", s.handleResort)
 	s.srv = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return s
 }
@@ -173,6 +182,7 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 		"CanRetag":        s.retag != nil,
 		"CanRescanLyrics": s.rescanLyrics != nil,
 		"CanDiscard":      s.discard != nil,
+		"CanResort":       s.resort != nil,
 	})
 }
 
@@ -253,6 +263,24 @@ func (s *Server) handleRescanLyrics(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
+func (s *Server) handleResort(w http.ResponseWriter, r *http.Request) {
+	if s.resort == nil {
+		http.Error(w, "resort is disabled", http.StatusNotFound)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.resort(r.Context(), id); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.log.Info("resort requested", "playlist_id", id)
+	http.Redirect(w, r, "/playlist/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
 func (s *Server) handleDiscard(w http.ResponseWriter, r *http.Request) {
 	if s.discard == nil {
 		http.Error(w, "discard is disabled", http.StatusNotFound)
@@ -325,6 +353,7 @@ var funcs = template.FuncMap{
 		return m
 	},
 	"isMissing": func(st store.TrackStatus) bool { return st == store.TrackMissing },
+	"isDone":    func(st store.PlaylistStatus) bool { return st == store.PlaylistDone },
 	// imported-but-unmatched tracks (stuck awaiting a Navidrome match) are the
 	// ones a manual re-fingerprint can help.
 	"isStuck": func(st store.TrackStatus) bool {
@@ -436,6 +465,11 @@ const pageTemplates = `
     <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/resync">
       <button type="submit" title="Re-check the Navidrome playlist and re-add any songs it is missing">⟳ Re-sync</button>
     </form>
+    {{if and .CanResort (isDone .Playlist.Status)}}
+    <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/resort">
+      <button type="submit" title="Reorder the Navidrome playlist to match the original feed order">↕ Sort to feed order</button>
+    </form>
+    {{end}}
     {{if .CanRescanLyrics}}
     <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/rescan-lyrics">
       <button type="submit" title="Fetch missing lyrics (.lrc) for every imported track in this playlist (runs in the background)">♪ Re-scan lyrics</button>

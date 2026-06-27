@@ -160,6 +160,14 @@ func main() {
 		return st.RetryTrack(trackID)
 	}
 
+	// Manual "sort to feed order" action: downloads complete out of order, so an
+	// assembled playlist's tracks land in Navidrome in arrival order. This rewrites
+	// the playlist in the feed's original order on demand (the daemon also does this
+	// automatically when a playlist completes).
+	resort := func(ctx context.Context, playlistID int64) error {
+		return pipe.ReorderPlaylist(ctx, playlistID)
+	}
+
 	app := &app{
 		cfg:   cfg,
 		store: st,
@@ -174,7 +182,7 @@ func main() {
 
 	// Read-only status dashboard (daemon mode only).
 	if cfg.Web.Listen != "" {
-		websrv := web.New(st, cfg.Web.Listen, logger, retag, rescanLyrics, discard)
+		websrv := web.New(st, cfg.Web.Listen, logger, retag, rescanLyrics, discard, resort)
 		go func() {
 			slog.Info("dashboard listening", "addr", cfg.Web.Listen)
 			if err := websrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {

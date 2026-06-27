@@ -255,10 +255,72 @@ func (p *Pipeline) download(ctx context.Context, pl store.Playlist, tracks []sto
 		}
 	}
 	if allPlaced {
+		// Downloads complete out of order across ticks, so songs were appended to
+		// the playlist as they became available. Now that every track is placed,
+		// rewrite the playlist once in feed order before marking it done. If the
+		// reorder fails we leave the playlist active and retry next tick rather
+		// than marking it done unsorted.
+		if err := p.reorderToFeedOrder(ctx, pl, tracks); err != nil {
+			return fmt.Errorf("reorder playlist: %w", err)
+		}
 		p.log.Info("playlist complete", "title", pl.Title, "tracks", len(tracks))
 		return p.store.SetPlaylistStatus(pl.ID, store.PlaylistDone)
 	}
 	return nil
+}
+
+// reorderToFeedOrder rewrites the Navidrome playlist so its tracks match the
+// feed's order. tracks is already ordered by position and, at the point this is
+// called, every entry is placed with a resolved NavidromeSongID.
+func (p *Pipeline) reorderToFeedOrder(ctx context.Context, pl store.Playlist, tracks []store.Track) error {
+	client := p.clients[pl.FeedName]
+	if client == nil {
+		return fmt.Errorf("no navidrome client for feed %q", pl.FeedName)
+	}
+	// pl is loaded at the start of the tick, so its NavidromePlaylistID can be
+	// stale (empty) for a playlist created earlier this same tick; fall back to a
+	// name lookup.
+	playlistID := pl.NavidromePlaylistID
+	if playlistID == "" {
+		navPl, err := client.FindPlaylistByName(ctx, pl.Title)
+		if err != nil {
+			return fmt.Errorf("find playlist: %w", err)
+		}
+		if navPl == nil {
+			return fmt.Errorf("playlist %q not found", pl.Title)
+		}
+		playlistID = navPl.ID
+	}
+	ordered := make([]string, 0, len(tracks))
+	for i := range tracks {
+		if tracks[i].NavidromeSongID == "" {
+			continue // not yet resolved; can't place it
+		}
+		ordered = append(ordered, tracks[i].NavidromeSongID)
+	}
+	if len(ordered) == 0 {
+		return nil
+	}
+	return client.ReplacePlaylist(ctx, playlistID, ordered)
+}
+
+// ReorderPlaylist rewrites the Navidrome playlist for the given store playlist id
+// so its tracks are in feed order, covering whatever is currently resolved. It is
+// exported for the dashboard's manual "sort" action; the daemon also reorders
+// automatically when a playlist completes.
+func (p *Pipeline) ReorderPlaylist(ctx context.Context, playlistID int64) error {
+	pl, err := p.store.PlaylistByID(playlistID)
+	if err != nil {
+		return err
+	}
+	if pl == nil {
+		return fmt.Errorf("playlist %d not found", playlistID)
+	}
+	tracks, err := p.store.TracksFor(playlistID)
+	if err != nil {
+		return fmt.Errorf("load tracks: %w", err)
+	}
+	return p.reorderToFeedOrder(ctx, *pl, tracks)
 }
 
 // resolve searches Navidrome for a track and returns the best match, preferring
