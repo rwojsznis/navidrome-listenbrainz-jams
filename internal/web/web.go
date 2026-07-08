@@ -408,7 +408,7 @@ const pageTemplates = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · Weekly Jams</title>
 <style>
-  :root {
+  :root, :root[data-theme="dark"] {
     color-scheme: dark;
     --bg: #0b0c10;
     --panel: rgba(255,255,255,.028);
@@ -416,12 +416,39 @@ const pageTemplates = `
     --line: rgba(255,255,255,.09);
     --line-2: rgba(255,255,255,.16);
     --ink: #ece9e2;
+    --ink-2: #c4c0b5;
     --muted: #8c897d;
     --amber: #f4a94a;
     --green: #46cd7d;
     --blue: #62a6f2;
     --teal: #43c9c9;
     --red: #ef6a6a;
+    --track: rgba(255,255,255,.07);
+    --hover: rgba(255,255,255,.09);
+    --glow-amber: rgba(244,169,74,.12);
+    --glow-blue: rgba(98,166,242,.09);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4efe4;
+    --panel: rgba(0,0,0,.022);
+    --panel-2: rgba(0,0,0,.045);
+    --line: rgba(0,0,0,.1);
+    --line-2: rgba(0,0,0,.18);
+    --ink: #241f18;
+    --ink-2: #4b4536;
+    --muted: #6b6252;
+    --amber: #a9660f;
+    --green: #157a41;
+    --blue: #2a5fb8;
+    --teal: #167d7d;
+    --red: #b8362f;
+    --track: rgba(0,0,0,.09);
+    --hover: rgba(0,0,0,.06);
+    --glow-amber: rgba(212,150,60,.22);
+    --glow-blue: rgba(70,120,200,.12);
+  }
+  :root {
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
     --radius: 14px;
@@ -437,8 +464,8 @@ const pageTemplates = `
     margin-inline: auto;
     line-height: 1.5;
     background:
-      radial-gradient(1100px 620px at 8% -10%, rgba(244,169,74,.12), transparent 58%),
-      radial-gradient(900px 560px at 112% 4%, rgba(98,166,242,.09), transparent 55%),
+      radial-gradient(1100px 620px at 8% -10%, var(--glow-amber), transparent 58%),
+      radial-gradient(900px 560px at 112% 4%, var(--glow-blue), transparent 55%),
       var(--bg);
     background-attachment: fixed;
   }
@@ -471,8 +498,16 @@ const pageTemplates = `
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .disc { animation: none; } }
 
+  /* --- theme toggle --- */
+  .theme-toggle { flex: none; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 50%; opacity: .8; transition: color .15s, opacity .15s, background .15s; }
+  .theme-toggle:hover { color: var(--amber); opacity: 1; background: var(--hover); }
+  .theme-toggle svg { width: 17px; height: 17px; display: block; }
+  .theme-toggle .ico-moon { display: none; }
+  :root[data-theme="light"] .theme-toggle .ico-sun { display: none; }
+  :root[data-theme="light"] .theme-toggle .ico-moon { display: block; }
+
   /* --- meter --- */
-  .meter { height: 6px; border-radius: 6px; background: rgba(255,255,255,.06); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.3); }
+  .meter { height: 6px; border-radius: 6px; background: var(--track); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
   .meter > span { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--green), #7fe0a3); box-shadow: 0 0 12px rgba(70,205,125,.5); transition: width .5s ease; }
 
   /* --- index cards --- */
@@ -496,7 +531,8 @@ const pageTemplates = `
   .status-tag.is-done { color: var(--green); }
 
   /* --- detail toolbar --- */
-  .backlink { display: inline-flex; align-items: center; gap: .35rem; font-size: .74rem; letter-spacing: .06em; color: var(--muted); margin-bottom: .7rem; }
+  .head-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: .9rem; }
+  .backlink { display: inline-flex; align-items: center; gap: .35rem; font-size: .74rem; letter-spacing: .06em; color: var(--muted); }
   .backlink:hover { color: var(--amber); }
   .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 1.3rem; margin-bottom: 1.6rem; }
   .detail-head .top { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
@@ -507,7 +543,7 @@ const pageTemplates = `
   /* --- buttons --- */
   form.inline { display: inline; margin: 0; }
   button { font-family: var(--mono); font-size: .74rem; cursor: pointer; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: .3rem .7rem; transition: border-color .15s, background .15s, color .15s; }
-  button:hover { border-color: var(--muted); background: rgba(255,255,255,.09); }
+  button:hover { border-color: var(--muted); background: var(--hover); }
   button.primary { border-color: rgba(244,169,74,.55); color: var(--amber); background: rgba(244,169,74,.1); }
   button.primary:hover { background: rgba(244,169,74,.2); }
 
@@ -521,7 +557,7 @@ const pageTemplates = `
   .track .body > * + * { margin-top: .5rem; }
   .track .headline { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
   .track .tname { font-family: var(--serif); font-size: 1.04rem; min-width: 0; }
-  .track .tname .ta { color: #c9c5ba; }
+  .track .tname .ta { color: var(--ink-2); }
   .track .tname .sep { color: var(--muted); margin: 0 .4rem; }
   .track .tname .tt { color: var(--ink); }
   .track-src { font-size: .68rem; color: var(--muted); word-break: break-all; font-family: var(--mono); }
@@ -533,7 +569,7 @@ const pageTemplates = `
   .st { font-size: .66rem; letter-spacing: .04em; padding: .16rem .55rem; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: .3rem; border: 1px solid transparent; }
   .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .s-inplaylist { color: var(--green); background: rgba(70,205,125,.12); border-color: rgba(70,205,125,.3); }
-  .s-exists { color: #8fd06a; background: rgba(143,208,106,.12); border-color: rgba(143,208,106,.3); }
+  .s-exists { color: var(--green); background: rgba(143,208,106,.14); border-color: rgba(143,208,106,.35); }
   .s-downloading { color: var(--blue); background: rgba(98,166,242,.12); border-color: rgba(98,166,242,.3); }
   .s-downloaded { color: var(--teal); background: rgba(67,201,201,.12); border-color: rgba(67,201,201,.3); }
   .s-missing { color: var(--red); background: rgba(239,106,106,.12); border-color: rgba(239,106,106,.3); }
@@ -548,6 +584,9 @@ const pageTemplates = `
 
   footer { margin-top: 2.5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 </style>
+<script>
+(function(){try{var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 </head><body>{{end}}
 
 {{define "foot"}}<footer>navidrome · listenbrainz · jams</footer></body></html>{{end}}
@@ -555,6 +594,8 @@ const pageTemplates = `
 {{define "ico-pending"}}<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.4 1.6"/></svg>{{end}}
 
 {{define "ico-done"}}<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.4l3.2 3.1L13 4.5"/></svg>{{end}}
+
+{{define "theme-toggle"}}<button class="theme-toggle" type="button" title="Toggle light / dark theme" aria-label="Toggle light or dark theme" onclick="var r=document.documentElement,n=r.getAttribute('data-theme')==='light'?'dark':'light';r.setAttribute('data-theme',n);try{localStorage.setItem('theme',n)}catch(e){}"><svg class="ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.8A8.2 8.2 0 019.2 3.5 7.3 7.3 0 1020.5 14.8z"/></svg></button>{{end}}
 
 {{define "index"}}
 {{template "head" (dict "Title" "Playlists")}}
@@ -565,6 +606,7 @@ const pageTemplates = `
     <h1>Weekly Jams</h1>
   </div>
   <div class="count-badge"><b>{{len .Playlists}}</b><span class="muted">playlists</span></div>
+  {{template "theme-toggle"}}
 </div>
 {{if not .Playlists}}
   <div class="empty">No playlists discovered yet — they appear here as feeds are read.</div>
@@ -601,7 +643,10 @@ const pageTemplates = `
 {{define "detail"}}
 {{template "head" (dict "Title" .Playlist.Title)}}
 <div class="detail-head">
-  <a class="backlink" href="/">← all playlists</a>
+  <div class="head-row">
+    <a class="backlink" href="/">← all playlists</a>
+    {{template "theme-toggle"}}
+  </div>
   <div class="top">
     <div>
       <div class="kicker">{{.Playlist.NavidromeUser}} · {{.Playlist.Status}}</div>
