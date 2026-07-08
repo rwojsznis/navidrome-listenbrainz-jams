@@ -108,6 +108,7 @@ feeds:
     navidrome_user: <my username>
     navidrome_pass: <my password>
   # some more playlists here
+  # configured for different navidrome users
 
 fingerprint:
   enabled: true
