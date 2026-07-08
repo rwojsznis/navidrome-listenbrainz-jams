@@ -389,6 +389,14 @@ var funcs = template.FuncMap{
 		}
 		return p
 	},
+	"pad2": func(n int) string {
+		s := strconv.Itoa(n)
+		if len(s) < 2 {
+			return "0" + s
+		}
+		return s
+	},
+	"inc": func(n int) int { return n + 1 },
 }
 
 var tmpl = template.Must(template.New("").Funcs(funcs).Parse(pageTemplates))
@@ -398,70 +406,218 @@ const pageTemplates = `
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}}</title>
+<title>{{.Title}} · Weekly Jams</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 1.5rem; max-width: 1000px; margin-inline: auto; }
-  h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; font-weight: 600; }
-  a { color: inherit; }
-  .muted { color: #888; font-size: .85rem; }
-  .card { border: 1px solid #8884; border-radius: 10px; padding: 1rem; margin-bottom: .8rem; text-decoration: none; display: block; }
-  .card:hover { border-color: #888a; background: #8881; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
-  .bar { height: 8px; border-radius: 4px; background: #8883; overflow: hidden; margin: .5rem 0; }
-  .bar > span { display: block; height: 100%; background: #2e9e54; }
-  .pills span { display: inline-block; font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; margin-right: .3rem; border: 1px solid #8885; }
-  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #8883; vertical-align: top; }
-  th { font-size: .75rem; text-transform: uppercase; color: #888; }
-  .st { font-size: .72rem; padding: .12rem .5rem; border-radius: 999px; white-space: nowrap; }
-  .s-inplaylist { background:#2e9e5433; color:#2e9e54; } .s-exists { background:#5b9e2e33; color:#6fae3e; }
-  .s-downloading { background:#2e74d033; color:#4a8fe0; } .s-downloaded { background:#2eb6b633; color:#2eb6b6; }
-  .s-missing { background:#d04a4a33; color:#e06a6a; } .s-pending { background:#8883; color:#999; }
-  .s-lyrics-synced { background:#2e9e5433; color:#2e9e54; } .s-lyrics-plain { background:#8a6d3b33; color:#b9923e; }
-  .err { color:#e06a6a; font-size:.78rem; }
-  .src { font-size:.72rem; color:#888; word-break:break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
-  form.inline { display:inline; margin:0; }
-  button { font: inherit; font-size:.78rem; cursor:pointer; border:1px solid #8886; background:#8881; color:inherit; border-radius:6px; padding:.15rem .55rem; }
-  button:hover { background:#8883; }
-  button.primary { border-color:#2e74d088; }
+  :root {
+    color-scheme: dark;
+    --bg: #0b0c10;
+    --panel: rgba(255,255,255,.028);
+    --panel-2: rgba(255,255,255,.05);
+    --line: rgba(255,255,255,.09);
+    --line-2: rgba(255,255,255,.16);
+    --ink: #ece9e2;
+    --muted: #8c897d;
+    --amber: #f4a94a;
+    --green: #46cd7d;
+    --blue: #62a6f2;
+    --teal: #43c9c9;
+    --red: #ef6a6a;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: var(--mono);
+    color: var(--ink);
+    margin: 0;
+    padding: 2.2rem 1.5rem 3rem;
+    max-width: 1040px;
+    margin-inline: auto;
+    line-height: 1.5;
+    background:
+      radial-gradient(1100px 620px at 8% -10%, rgba(244,169,74,.12), transparent 58%),
+      radial-gradient(900px 560px at 112% 4%, rgba(98,166,242,.09), transparent 55%),
+      var(--bg);
+    background-attachment: fixed;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.014) 0 1px, transparent 1px 3px);
+    mix-blend-mode: overlay;
+  }
+  a { color: inherit; text-decoration: none; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: 2rem; letter-spacing: -.01em; margin: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 1.15rem; margin: 0; letter-spacing: -.005em; }
+  .muted { color: var(--muted); font-size: .82rem; }
+  .kicker { font-size: .68rem; letter-spacing: .22em; text-transform: uppercase; color: var(--amber); }
+
+  /* --- masthead --- */
+  .masthead { display: flex; align-items: center; gap: 1.1rem; padding-bottom: 1.4rem; margin-bottom: 1.8rem; border-bottom: 1px solid var(--line); }
+  .disc {
+    flex: none; width: 46px; height: 46px; border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 50%, #d6d2c8 0 13%, transparent 14%),
+      radial-gradient(circle at 50% 50%, var(--amber) 0 20%, transparent 21%),
+      repeating-radial-gradient(circle at 50% 50%, #16171c 0 1.5px, #101116 1.5px 3px),
+      #0a0a0d;
+    box-shadow: 0 0 0 1px var(--line-2), 0 6px 20px rgba(0,0,0,.5);
+    animation: spin 8s linear infinite;
+  }
+  .masthead .title-block { flex: 1; }
+  .masthead .count-badge { text-align: right; }
+  .masthead .count-badge b { font-family: var(--serif); font-size: 1.7rem; color: var(--ink); display: block; line-height: 1; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .disc { animation: none; } }
+
+  /* --- meter --- */
+  .meter { height: 6px; border-radius: 6px; background: rgba(255,255,255,.06); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.3); }
+  .meter > span { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--green), #7fe0a3); box-shadow: 0 0 12px rgba(70,205,125,.5); transition: width .5s ease; }
+
+  /* --- index cards --- */
+  .stack { display: flex; flex-direction: column; gap: .7rem; }
+  .card { display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: center; padding: 1.05rem 1.15rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: inset 3px 0 0 var(--line-2); transition: border-color .18s, background .18s, transform .18s, box-shadow .18s; }
+  .card:hover { border-color: var(--line-2); background: var(--panel-2); transform: translateY(-2px); }
+  .card.is-done { box-shadow: inset 3px 0 0 var(--green); }
+  .card.is-done .num { color: var(--green); }
+  .card .num { font-size: .78rem; color: var(--muted); width: 1.5rem; text-align: right; padding-top: .1rem; }
+  .card .body { min-width: 0; }
+  .card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-bottom: .55rem; }
+  .card h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .pct { font-size: 1.05rem; color: var(--amber); flex: none; }
+  .card .foot { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: .55rem; }
+
+  /* --- pills --- */
+  .pills { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+  .pills span { font-size: .68rem; padding: .12rem .5rem; border-radius: 999px; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: .28rem; }
+  .ico { width: .95em; height: .95em; flex: none; }
+  .status-tag { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+  .status-tag.is-done { color: var(--green); }
+
+  /* --- detail toolbar --- */
+  .backlink { display: inline-flex; align-items: center; gap: .35rem; font-size: .74rem; letter-spacing: .06em; color: var(--muted); margin-bottom: .7rem; }
+  .backlink:hover { color: var(--amber); }
+  .detail-head { border-bottom: 1px solid var(--line); padding-bottom: 1.3rem; margin-bottom: 1.6rem; }
+  .detail-head .top { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .placed { text-align: right; font-size: .8rem; color: var(--muted); }
+  .placed b { font-family: var(--serif); font-size: 1.6rem; color: var(--ink); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: 1rem; }
+
+  /* --- buttons --- */
+  form.inline { display: inline; margin: 0; }
+  button { font-family: var(--mono); font-size: .74rem; cursor: pointer; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--ink); border-radius: 8px; padding: .3rem .7rem; transition: border-color .15s, background .15s, color .15s; }
+  button:hover { border-color: var(--muted); background: rgba(255,255,255,.09); }
+  button.primary { border-color: rgba(244,169,74,.55); color: var(--amber); background: rgba(244,169,74,.1); }
+  button.primary:hover { background: rgba(244,169,74,.2); }
+
+  /* --- track cards --- */
+  .tracks { display: flex; flex-direction: column; gap: .5rem; }
+  .track { display: grid; grid-template-columns: auto 1fr; gap: 1rem; padding: .85rem 1.05rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); transition: border-color .15s, background .15s; }
+  .track:hover { border-color: var(--line-2); background: var(--panel-2); }
+  .track.is-missing { border-color: rgba(239,106,106,.28); background: rgba(239,106,106,.035); }
+  .track .num { font-size: .8rem; color: var(--muted); width: 1.7rem; text-align: right; padding-top: .2rem; font-variant-numeric: tabular-nums; }
+  .track .body { min-width: 0; }
+  .track .body > * + * { margin-top: .5rem; }
+  .track .headline { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+  .track .tname { font-family: var(--serif); font-size: 1.04rem; min-width: 0; }
+  .track .tname .ta { color: #c9c5ba; }
+  .track .tname .sep { color: var(--muted); margin: 0 .4rem; }
+  .track .tname .tt { color: var(--ink); }
+  .track-src { font-size: .68rem; color: var(--muted); word-break: break-all; font-family: var(--mono); }
+  .track-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .track-meta { font-size: .72rem; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; }
+  .track-meta .mi + .mi::before { content: "·"; color: var(--line-2); margin: 0 .5rem; }
+
+  /* --- status chips --- */
+  .st { font-size: .66rem; letter-spacing: .04em; padding: .16rem .55rem; border-radius: 999px; white-space: nowrap; display: inline-flex; align-items: center; gap: .3rem; border: 1px solid transparent; }
+  .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .s-inplaylist { color: var(--green); background: rgba(70,205,125,.12); border-color: rgba(70,205,125,.3); }
+  .s-exists { color: #8fd06a; background: rgba(143,208,106,.12); border-color: rgba(143,208,106,.3); }
+  .s-downloading { color: var(--blue); background: rgba(98,166,242,.12); border-color: rgba(98,166,242,.3); }
+  .s-downloaded { color: var(--teal); background: rgba(67,201,201,.12); border-color: rgba(67,201,201,.3); }
+  .s-missing { color: var(--red); background: rgba(239,106,106,.12); border-color: rgba(239,106,106,.3); }
+  .s-pending { color: var(--muted); background: rgba(255,255,255,.05); border-color: var(--line-2); }
+  .s-lyrics-synced { color: var(--green); background: rgba(70,205,125,.1); border-color: rgba(70,205,125,.25); }
+  .s-lyrics-plain { color: var(--amber); background: rgba(244,169,74,.1); border-color: rgba(244,169,74,.25); }
+  .st.s-lyrics-synced::before, .st.s-lyrics-plain::before { display: none; }
+
+  .err { color: var(--red); font-size: .72rem; max-width: 22rem; }
+  .src { font-size: .68rem; color: var(--muted); word-break: break-all; }
+  .empty { text-align: center; padding: 4rem 1rem; color: var(--muted); border: 1px dashed var(--line-2); border-radius: var(--radius); }
+
+  footer { margin-top: 2.5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 </style>
 </head><body>{{end}}
 
-{{define "foot"}}<p class="muted" style="margin-top:2rem">navidrome-listenbrainz-jams</p></body></html>{{end}}
+{{define "foot"}}<footer>navidrome · listenbrainz · jams</footer></body></html>{{end}}
+
+{{define "ico-pending"}}<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.4 1.6"/></svg>{{end}}
+
+{{define "ico-done"}}<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.4l3.2 3.1L13 4.5"/></svg>{{end}}
 
 {{define "index"}}
 {{template "head" (dict "Title" "Playlists")}}
-<div class="topbar"><h1>🎵 Weekly Jams</h1></div>
-{{if not .Playlists}}<p class="muted">No playlists discovered yet.</p>{{end}}
-{{range .Playlists}}
-<a class="card" href="/playlist/{{.ID}}">
-  <div class="row">
-    <h2>{{.Title}}</h2>
-    <span class="muted">{{.Counts.InPlaylist}}/{{.Counts.Total}} · {{.Counts.Percent}}%</span>
+<div class="masthead">
+  <span class="disc" aria-hidden="true"></span>
+  <div class="title-block">
+    <div class="kicker">ListenBrainz → Navidrome</div>
+    <h1>Weekly Jams</h1>
   </div>
-  <div class="bar"><span style="width:{{.Counts.Percent}}%"></span></div>
-  <div class="row">
-    <div class="pills">
-      <span>👤 {{.NavidromeUser}}</span>
-      {{if .Counts.Downloading}}<span>⬇ {{.Counts.Downloading}} downloading</span>{{end}}
-      {{if .Counts.Missing}}<span>✗ {{.Counts.Missing}} missing</span>{{end}}
-      {{if .Counts.Pending}}<span>… {{.Counts.Pending}} pending</span>{{end}}
+  <div class="count-badge"><b>{{len .Playlists}}</b><span class="muted">playlists</span></div>
+</div>
+{{if not .Playlists}}
+  <div class="empty">No playlists discovered yet — they appear here as feeds are read.</div>
+{{else}}
+<div class="stack">
+{{range $i, $p := .Playlists}}
+<a class="card{{if isDone $p.Status}} is-done{{end}}" href="/playlist/{{$p.ID}}">
+  <span class="num">{{pad2 (inc $i)}}</span>
+  <div class="body">
+    <div class="top">
+      <h2>{{$p.Title}}</h2>
+      <span class="pct">{{$p.Counts.Percent}}%</span>
     </div>
-    <span class="muted">{{.Status}}</span>
+    <div class="meter"><span style="width:{{$p.Counts.Percent}}%"></span></div>
+    <div class="foot">
+      <div class="pills">
+        <span>♫ {{$p.Counts.InPlaylist}}/{{$p.Counts.Total}}</span>
+        <span>◍ {{$p.NavidromeUser}}</span>
+        {{if $p.Counts.Downloading}}<span>⬇ {{$p.Counts.Downloading}}</span>{{end}}
+        {{if $p.Counts.Missing}}<span>✗ {{$p.Counts.Missing}}</span>{{end}}
+        {{if $p.Counts.Pending}}<span>{{template "ico-pending"}} {{$p.Counts.Pending}}</span>{{end}}
+      </div>
+      {{if isDone $p.Status}}<span class="status-tag is-done">{{template "ico-done"}} done</span>
+      {{else}}<span class="status-tag">{{template "ico-pending"}} {{$p.Status}}</span>{{end}}
+    </div>
   </div>
 </a>
+{{end}}
+</div>
 {{end}}
 {{template "foot"}}
 {{end}}
 
 {{define "detail"}}
 {{template "head" (dict "Title" .Playlist.Title)}}
-<div class="topbar">
-  <div><a class="muted" href="/">← all playlists</a><h1>{{.Playlist.Title}}</h1></div>
-  <div style="text-align:right">
-    <div class="muted">{{.Counts.InPlaylist}}/{{.Counts.Total}} placed</div>
+<div class="detail-head">
+  <a class="backlink" href="/">← all playlists</a>
+  <div class="top">
+    <div>
+      <div class="kicker">{{.Playlist.NavidromeUser}} · {{.Playlist.Status}}</div>
+      <h1>{{.Playlist.Title}}</h1>
+    </div>
+    <div class="placed"><b>{{.Counts.InPlaylist}}</b> / {{.Counts.Total}}<br>placed · {{.Counts.Percent}}%</div>
+  </div>
+  <div class="meter"><span style="width:{{.Counts.Percent}}%"></span></div>
+  <div class="pills" style="margin-top:1rem">
+    {{if .Counts.Downloading}}<span>⬇ {{.Counts.Downloading}} downloading</span>{{end}}
+    {{if .Counts.Downloaded}}<span>↯ {{.Counts.Downloaded}} importing</span>{{end}}
+    {{if .Counts.Exists}}<span>✓ {{.Counts.Exists}} in library</span>{{end}}
+    {{if .Counts.Missing}}<span>✗ {{.Counts.Missing}} missing</span>{{end}}
+    {{if .Counts.Pending}}<span>{{template "ico-pending"}} {{.Counts.Pending}} pending</span>{{end}}
+  </div>
+  <div class="toolbar">
     <form class="inline" method="post" action="/playlist/{{.Playlist.ID}}/resync">
       <button type="submit" title="Re-check the Navidrome playlist and re-add any songs it is missing">⟳ Re-sync</button>
     </form>
@@ -482,36 +638,27 @@ const pageTemplates = `
     {{end}}
   </div>
 </div>
-<div class="bar"><span style="width:{{.Counts.Percent}}%"></span></div>
-<p class="pills">
-  <span>👤 {{.Playlist.NavidromeUser}}</span>
-  <span>{{.Playlist.Status}}</span>
-  {{if .Counts.Downloading}}<span>⬇ {{.Counts.Downloading}}</span>{{end}}
-  {{if .Counts.Missing}}<span>✗ {{.Counts.Missing}}</span>{{end}}
-  {{if .Counts.Pending}}<span>… {{.Counts.Pending}}</span>{{end}}
-</p>
-<table>
-  <thead><tr><th>#</th><th>Artist</th><th>Title</th><th>Status</th><th>Lyrics</th><th>Try</th><th>Updated</th><th>Detail</th></tr></thead>
-  <tbody>
-  {{range .Tracks}}
-    <tr>
-      <td class="muted">{{.Position}}</td>
-      <td>{{.Artist}}</td>
-      <td>{{.Title}}</td>
-      <td><span class="st {{statusClass .Status}}">{{.Status}}</span></td>
-      <td>
-        {{if eq .LyricsStatus "synced"}}<span class="st s-lyrics-synced">♪ synced</span>
-        {{else if eq .LyricsStatus "plain"}}<span class="st s-lyrics-plain">plain</span>
-        {{else if eq .LyricsStatus "none"}}<span class="muted">none</span>
-        {{else}}<span class="muted">—</span>{{end}}
-      </td>
-      <td class="muted">{{if .Attempts}}{{.Attempts}}{{else}}—{{end}}</td>
-      <td class="muted">{{shortTime .UpdatedAt}}</td>
-      <td>
-        {{if .ImportedPath}}<span class="muted">{{base .ImportedPath}}</span>{{end}}
-        {{if .SlskdUsername}}<span class="muted">⬇ {{.SlskdUsername}}</span>{{end}}
-        {{if .SlskdFile}}<div class="src" title="original download (peer path)">⇩ {{.SlskdFile}}</div>{{end}}
-        {{if .LastError}}<div class="err">{{.LastError}}</div>{{end}}
+<div class="tracks">
+{{range .Tracks}}
+  <div class="track{{if isMissing .Status}} is-missing{{end}}">
+    <span class="num">{{pad2 .Position}}</span>
+    <div class="body">
+      <div class="headline">
+        <div class="tname"><span class="ta">{{.Artist}}</span><span class="sep">—</span><span class="tt">{{.Title}}</span></div>
+        <span class="st {{statusClass .Status}}">{{.Status}}</span>
+      </div>
+      <div class="track-meta">
+        {{if eq .LyricsStatus "synced"}}<span class="mi st s-lyrics-synced">♪ synced</span>
+        {{else if eq .LyricsStatus "plain"}}<span class="mi st s-lyrics-plain">♪ plain</span>{{end}}
+        {{if .SlskdUsername}}<span class="mi">⬇ {{.SlskdUsername}}</span>{{end}}
+        {{if .Attempts}}<span class="mi">{{.Attempts}} {{if eq .Attempts 1}}try{{else}}tries{{end}}</span>{{end}}
+        {{if .ImportedPath}}<span class="mi">{{base .ImportedPath}}</span>{{end}}
+        <span class="mi">updated {{shortTime .UpdatedAt}}</span>
+      </div>
+      {{if .SlskdFile}}<div class="track-src" title="original download (peer path)">⇩ {{.SlskdFile}}</div>{{end}}
+      {{if .LastError}}<div class="err">⚠ {{.LastError}}</div>{{end}}
+      {{if or (isMissing .Status) (and $.CanRetag (isStuck .Status)) (and $.CanDiscard (isStuck .Status))}}
+      <div class="track-actions">
         {{if isMissing .Status}}
         <form class="inline" method="post" action="/track/{{.ID}}/retry">
           <button type="submit">↻ Retry</button>
@@ -527,11 +674,12 @@ const pageTemplates = `
           <button type="submit" title="Delete the wrong downloaded file and search for this track again">🗑 Delete &amp; restart</button>
         </form>
         {{end}}
-      </td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
+      </div>
+      {{end}}
+    </div>
+  </div>
+{{end}}
+</div>
 {{template "foot"}}
 {{end}}
 `
