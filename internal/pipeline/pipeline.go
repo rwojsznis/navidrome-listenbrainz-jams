@@ -324,14 +324,46 @@ func (p *Pipeline) ReorderPlaylist(ctx context.Context, playlistID int64) error 
 }
 
 // resolve searches Navidrome for a track and returns the best match, preferring
-// an exact MusicBrainz recording-id match over fuzzy text matching.
+// an exact MusicBrainz recording-id match over fuzzy text matching. It escalates
+// through progressively simpler queries because Navidrome ANDs the query tokens:
+// an over-specified query (e.g. "Lady Gaga featuring R. Kelly Do What U Want")
+// returns nothing when the library tags the primary artist alone and lacks the
+// "featuring" token, even though the track is present. We try the full query
+// first, then drop the featured-artist clause, then title-only — stopping at the
+// first query that yields a confident match.
 func (p *Pipeline) resolve(ctx context.Context, client *navidrome.Client, t *store.Track) (*navidrome.Song, bool) {
-	songs, err := client.Search3(ctx, t.Artist+" "+t.Title, 50)
-	if err != nil {
-		p.log.Warn("navidrome search", "track", t.Title, "err", err)
-		return nil, false
+	for _, q := range resolveQueries(t) {
+		songs, err := client.Search3(ctx, q, 50)
+		if err != nil {
+			p.log.Warn("navidrome search", "track", t.Title, "query", q, "err", err)
+			continue
+		}
+		if song, ok := selectMatch(songs, t, p.cfg.Matching.FuzzyThreshold); ok {
+			return song, true
+		}
 	}
-	return selectMatch(songs, t, p.cfg.Matching.FuzzyThreshold)
+	return nil, false
+}
+
+// resolveQueries builds the ordered, de-duplicated list of Navidrome search
+// queries for a track, from most specific to least. selectMatch still enforces
+// artist+title similarity on whatever each query returns, so a broad title-only
+// query cannot produce a wrong match.
+func resolveQueries(t *store.Track) []string {
+	sa, st := match.SimplifyArtist(t.Artist), match.SimplifyTitle(t.Title)
+	var qs []string
+	seen := make(map[string]bool)
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" && !seen[s] {
+			seen[s] = true
+			qs = append(qs, s)
+		}
+	}
+	add(t.Artist + " " + t.Title)
+	add(sa + " " + st)
+	add(st)
+	return qs
 }
 
 // selectMatch picks the library song for a feed track. A matching MusicBrainz

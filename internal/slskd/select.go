@@ -31,6 +31,21 @@ type Candidate struct {
 	File     File
 }
 
+// derivativeMarkers are words that denote an ALTERNATE recording — a slowed/
+// sped-up edit, a remix, a live take, an acoustic/instrumental version — rather
+// than the studio original the feed asks for. When one appears in a candidate's
+// filename but NOT in the requested title, the candidate is a different version
+// and is ranked below clean matches. This is decisive because a verbose alt
+// filename ("Popular (Slowed) (with Playboi Carti & Madonna)") can otherwise
+// out-rank a plain original ("The Weeknd - Popular") by listing more artist
+// tokens in its path — the artist-presence tier would prefer it before the
+// generic extra-word penalty ever applied.
+var derivativeMarkers = map[string]bool{
+	"slowed": true, "sped": true, "nightcore": true, "reverb": true,
+	"remix": true, "live": true, "acoustic": true, "instrumental": true,
+	"karaoke": true, "bootleg": true, "mashup": true, "cover": true,
+}
+
 // minStandaloneTitleTokens is how many title words a match needs to be trusted
 // when the artist is absent from the file's path. Single-word titles ("Intro",
 // "Familiar") coincidentally appear in countless unrelated files, so they need
@@ -44,7 +59,8 @@ const minStandaloneTitleTokens = 2
 // previously let a search for "Familiar" import an unrelated track that happened
 // to share that one word. Among acceptable candidates, ranking prioritizes how
 // closely the filename matches the requested title (so the original recording
-// beats remixes/live/edited versions that carry extra words), then artist
+// beats remixes/live/edited versions that carry extra words), then whether it is
+// the studio original rather than a slowed/remix/live version, then artist
 // presence, then format/quality. Many Soulseek peers are unreachable, so callers
 // should try candidates in order until an enqueue succeeds. Locked files are
 // ignored (they require sharing to access).
@@ -54,6 +70,12 @@ func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 	titleTokens := tokenize(target.Title)
 	titleSet := toSet(titleTokens)
 	artistSet := toSet(tokenize(target.Artist))
+	// The primary (lead) artist, used by the acceptance gate. A multi-artist feed
+	// credit ("The Weeknd with Playboi Carti & Madonna") rarely appears in full in
+	// a clean filename ("The Weeknd - Popular"), so requiring EVERY collaborator
+	// would reject the original and leave only verbose alt-version files. Trusting
+	// the lead artist is enough to tell a real match from a coincidental word.
+	primaryArtistTokens := tokenize(match.SimplifyArtist(target.Artist))
 	// Acceptance uses the simplified title (decorations like "(original mix)" or
 	// a "feat." clause stripped) so a legitimate file that omits them isn't
 	// rejected, while still requiring the core title words to be present.
@@ -64,6 +86,7 @@ func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 		resp          SearchResponse
 		fmtRank       int
 		titleMissing  int // requested title tokens absent from the filename
+		derivative    int // version markers (slowed/remix/live/...) not in the title
 		artistMissing int // requested artist tokens absent from the full path
 		extra         int // non-title, non-artist words (remix/live/edit/...)
 	}
@@ -96,13 +119,23 @@ func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 					artistMissing++
 				}
 			}
+			primaryArtistMissing := 0
+			for _, t := range primaryArtistTokens {
+				if !pathSet[t] {
+					primaryArtistMissing++
+				}
+			}
 			// Acceptance gate: drop candidates that aren't plausibly this
 			// recording, so a tick downloads nothing rather than the wrong file.
-			if !acceptable(reqTitleTokens, nameSet, artistMissing) {
+			if !acceptable(reqTitleTokens, nameSet, primaryArtistMissing) {
 				continue
 			}
 			extra := 0
+			derivative := 0
 			for tok := range nameSet {
+				if derivativeMarkers[tok] && !titleSet[tok] {
+					derivative++
+				}
 				if titleSet[tok] || artistSet[tok] || isNumeric(tok) {
 					continue
 				}
@@ -114,6 +147,7 @@ func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 				resp:          r,
 				fmtRank:       rank,
 				titleMissing:  titleMissing,
+				derivative:    derivative,
 				artistMissing: artistMissing,
 				extra:         extra,
 			})
@@ -127,31 +161,37 @@ func Rank(responses []SearchResponse, c Criteria, target Target) []Candidate {
 		if a.titleMissing != b.titleMissing {
 			return a.titleMissing < b.titleMissing
 		}
-		// 2. artist present in the path
+		// 2. the studio original, not a slowed/remix/live/acoustic version. This
+		//    outranks artist presence: an alt-version filename often lists more
+		//    collaborators than a clean original, so it would otherwise win tier 3.
+		if a.derivative != b.derivative {
+			return a.derivative < b.derivative
+		}
+		// 3. artist present in the path
 		if a.artistMissing != b.artistMissing {
 			return a.artistMissing < b.artistMissing
 		}
-		// 3. closest to the exact title — fewest extra words (remix/live/edit)
+		// 4. closest to the exact title — fewest extra words (remix/live/edit)
 		if a.extra != b.extra {
 			return a.extra < b.extra
 		}
-		// 4. preferred format
+		// 5. preferred format
 		if a.fmtRank != b.fmtRank {
 			return a.fmtRank < b.fmtRank
 		}
-		// 5. peers with a free upload slot first
+		// 6. peers with a free upload slot first
 		if a.resp.HasFreeUploadSlot != b.resp.HasFreeUploadSlot {
 			return a.resp.HasFreeUploadSlot
 		}
-		// 6. higher quality (bitrate)
+		// 7. higher quality (bitrate)
 		if a.cand.File.BitRate != b.cand.File.BitRate {
 			return a.cand.File.BitRate > b.cand.File.BitRate
 		}
-		// 7. faster uploader
+		// 8. faster uploader
 		if a.resp.UploadSpeed != b.resp.UploadSpeed {
 			return a.resp.UploadSpeed > b.resp.UploadSpeed
 		}
-		// 8. shorter queue
+		// 9. shorter queue
 		return a.resp.QueueLength < b.resp.QueueLength
 	})
 
@@ -179,16 +219,20 @@ func SelectBest(responses []SearchResponse, c Criteria, target Target) (username
 //     an unrelated file by a different artist (e.g. "Familiar" -> a Touhou track,
 //     "Intro" -> "B2 Intro Sing"), with the artist absent from the path.
 //
-// When the artist appears in the path the match is trusted outright; otherwise
-// it is trusted only if the title is specific enough to stand alone, preserving
-// downloads of loose shared files that omit the artist (e.g. "Come Together.flac").
-func acceptable(reqTitleTokens []string, nameSet map[string]bool, artistMissing int) bool {
+// When the primary artist appears in the path the match is trusted outright;
+// otherwise it is trusted only if the title is specific enough to stand alone,
+// preserving downloads of loose shared files that omit the artist (e.g.
+// "Come Together.flac"). primaryArtistMissing counts LEAD-artist tokens absent
+// from the path, not every credited collaborator, so a clean original of a
+// multi-artist track ("The Weeknd - Popular") isn't rejected for omitting the
+// featured names.
+func acceptable(reqTitleTokens []string, nameSet map[string]bool, primaryArtistMissing int) bool {
 	for _, t := range reqTitleTokens {
 		if !nameSet[t] {
 			return false
 		}
 	}
-	if artistMissing == 0 {
+	if primaryArtistMissing == 0 {
 		return true
 	}
 	return len(reqTitleTokens) >= minStandaloneTitleTokens

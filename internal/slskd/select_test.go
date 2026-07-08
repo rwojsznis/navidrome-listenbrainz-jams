@@ -74,6 +74,52 @@ func TestPrefersExactTitleOverRemix(t *testing.T) {
 	}
 }
 
+// TestPrefersOriginalOverSlowedMultiArtist is the playlist-39057 case: a search
+// returns the studio original AND a "(Slowed)" edit. The slowed filename spells
+// out every collaborator, so it matches MORE artist tokens than a clean original
+// and would win the artist-presence tier — but the derivative penalty must rank
+// the original first regardless.
+func TestPrefersOriginalOverSlowedMultiArtist(t *testing.T) {
+	target := Target{Artist: "The Weeknd with Playboi Carti & Madonna", Title: "Popular"}
+	responses := []SearchResponse{
+		{Username: "slowed", HasFreeUploadSlot: true, UploadSpeed: 999, Files: []File{
+			{Filename: `Music\The Weeknd - Popular (Slowed) (with Playboi Carti & Madonna).mp3`, Extension: ".mp3", BitRate: 320},
+		}},
+		{Username: "original", HasFreeUploadSlot: false, UploadSpeed: 10, Files: []File{
+			{Filename: `Music\The Weeknd - Popular.mp3`, Extension: ".mp3", BitRate: 320},
+		}},
+	}
+	user, file, ok := SelectBest(responses, Criteria{FormatPreference: []string{"mp3", "flac"}}, target)
+	if !ok || user != "original" {
+		t.Fatalf("expected the studio original to beat the slowed edit, got user=%s file=%s", user, file.Filename)
+	}
+}
+
+// A remix in the preferred format must lose to the original in a lesser format.
+func TestPrefersOriginalOverRemixAcrossFormats(t *testing.T) {
+	target := Target{Artist: "Daft Punk", Title: "One More Time"}
+	responses := []SearchResponse{
+		{Username: "remix", Files: []File{{Filename: `Daft Punk\One More Time (Club Remix).flac`, Extension: ".flac"}}},
+		{Username: "orig", Files: []File{{Filename: `Daft Punk\One More Time.mp3`, Extension: ".mp3", BitRate: 320}}},
+	}
+	user, _, ok := SelectBest(responses, Criteria{FormatPreference: []string{"flac", "mp3"}}, target)
+	if !ok || user != "orig" {
+		t.Fatalf("expected original mp3 to beat remix flac, got user=%s", user)
+	}
+}
+
+// When the feed title itself names the version (a remix IS the requested
+// recording), the marker in the filename must NOT be penalized.
+func TestDerivativeMarkerAllowedWhenRequested(t *testing.T) {
+	target := Target{Artist: "Deadmau5", Title: "Strobe (Club Edit Remix)"}
+	responses := []SearchResponse{
+		{Username: "x", Files: []File{{Filename: `Deadmau5\Strobe (Club Edit Remix).flac`, Extension: ".flac"}}},
+	}
+	if _, _, ok := SelectBest(responses, Criteria{FormatPreference: []string{"flac", "mp3"}}, target); !ok {
+		t.Fatal("expected a requested remix to be accepted, not penalized as a derivative")
+	}
+}
+
 // TestPrefersTitleMatchOverFormat: the right song in mp3 beats a wrong/remix song
 // in the preferred flac format.
 func TestPrefersTitleMatchOverFormat(t *testing.T) {

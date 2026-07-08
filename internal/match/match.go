@@ -118,6 +118,19 @@ func artistSimilarity(a, b string) float64 {
 	if strings.Contains(nb, na) || strings.Contains(na, nb) {
 		return 0.95
 	}
+	// Multi-artist collaborations rarely agree byte-for-byte: they differ in
+	// order, separator ("with"/"&"/","/";") and which collaborators are credited
+	// ("The Weeknd with Playboi Carti & Madonna" vs
+	// "The Weeknd, Madonna, Playboi Carti"). Neither string contains the other, so
+	// fall back to the lead artist: if one side's primary artist appears in the
+	// other, treat it as a strong (but slightly less certain) match. Best() still
+	// requires the title to match independently, so this cannot pair two different
+	// songs that merely share a lead artist.
+	if pa, pb := Normalize(SimplifyArtist(a)), Normalize(SimplifyArtist(b)); pa != "" && pb != "" {
+		if strings.Contains(nb, pa) || strings.Contains(na, pb) {
+			return 0.9
+		}
+	}
 	return Similarity(a, b)
 }
 
@@ -167,6 +180,16 @@ func SimplifyTitle(title string) string {
 		s = s[:i]
 	}
 	return strings.TrimSpace(s)
+}
+
+// SimplifyArtist drops a trailing "feat./ft./featuring/with ..." clause from an
+// artist string, leaving the primary artist. Feed artists sometimes read
+// "Lady Gaga featuring R. Kelly" while the library tags the primary artist alone
+// ("Lady Gaga"), and the extra words break Navidrome's token-AND search — it
+// returns nothing even though the track is present. Searching with the simplified
+// artist finds it, and the fuzzy/MBID match then confirms it.
+func SimplifyArtist(artist string) string {
+	return strings.TrimSpace(featRe.ReplaceAllString(artist, ""))
 }
 
 // levenshtein computes edit distance between two strings (rune-aware).

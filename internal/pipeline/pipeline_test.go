@@ -63,3 +63,31 @@ func TestSelectMatch(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveQueries(t *testing.T) {
+	// Featured-artist track (the Lady Gaga / R. Kelly case): the full query is
+	// over-specified for Navidrome's token-AND search, so we must also emit the
+	// primary-artist and title-only fallbacks.
+	tr := &store.Track{Artist: "Lady Gaga featuring R. Kelly", Title: "Do What U Want"}
+	got := resolveQueries(tr)
+	want := []string{
+		"Lady Gaga featuring R. Kelly Do What U Want",
+		"Lady Gaga Do What U Want",
+		"Do What U Want",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("query[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+
+	// No featured artist / no decorations: the full query already equals the
+	// title-only fallback's artist prefix, so we should not emit duplicates.
+	tr2 := &store.Track{Artist: "Daft Punk", Title: "One More Time"}
+	if got := resolveQueries(tr2); len(got) != 2 {
+		t.Fatalf("expected 2 deduped queries, got %v", got)
+	}
+}
