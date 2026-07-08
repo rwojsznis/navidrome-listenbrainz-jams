@@ -10,7 +10,7 @@ playlists — downloading any missing tracks from [slskd](https://github.com/sls
 
 ## tl;dr
 
-It was designed to be ran on same machine (e.g. NAS) alongside Navidrome and slskd (_source_ of music).
+It was designed to be ran on same machine (e.g. NAS) alongside Navidrome and slskd (_source_ of music, on top of your existing Navidrome library).
 
 I run it like this (simplified version):
 
@@ -60,7 +60,7 @@ docker run -d \
   --security-opt no-new-privileges:true \
   --cap-drop ALL \
   --restart unless-stopped \
-  emqz/navidrome-listenbrainz-jams:latest
+  emqz/navidrome-listenbrainz-jams:latest # proper release cycle TBD
 ```
 
 They key things is mounting download folders with correct permissions/paths as this app requires access to both slskd downloads directory and some directory where we would move those downloads to (in example above - to `/volume1/music/weekly_jams` which is mounted as `/music`)
@@ -117,6 +117,17 @@ lyrics:
   enabled: true
   lrclib_url: https://lrclib.net
 ```
+
+## Show me the money
+
+List of playlists synced with RSS:
+![](/docs/screenshots/index.jpg)
+
+Single playlist status:
+![](/docs/screenshots/playlist.jpg)
+
+Playlists are synced into Navidrome, here in [Psysonic client](https://github.com/Psychotoxical/psysonic):
+![](/docs/screenshots/client.jpg)
 
 ## What it does
 
