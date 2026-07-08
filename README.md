@@ -1,9 +1,122 @@
 # navidrome-listenbrainz-jams
 
+> [!NOTE]
+> This is my AI slop. There are many like it, but this one is mine.
+
 A small Go daemon that turns [ListenBrainz](https://listenbrainz.org)
 recommendation feeds (e.g. *Weekly Jams*) into [Navidrome](https://www.navidrome.org)
 playlists — downloading any missing tracks from [slskd](https://github.com/slskd/slskd)
 (Soulseek) along the way.
+
+## tl;dr
+
+It was designed to be ran on same machine (e.g. NAS) alongside Navidrome and slskd (_source_ of music).
+
+I run it like this (simplified version):
+
+```bash
+docker run -d \
+  --name navidrome \
+  --user 1024:100 \
+  -v /volume4/docker/navidrome:/data \
+  -v /volume1/music:/music:ro \
+  --network=music \
+  --read-only \
+  -p 4533:4533 \
+  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --tmpfs /var/tmp:rw,noexec,nosuid,size=64m \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL \
+  --restart unless-stopped \
+  deluan/navidrome:0.63.0
+
+docker run -d \
+  --name slskd \
+  --user 1024:100 \
+  -e SLSKD_UMASK=022 \
+  -p 5030:5030 \
+  -p 50300:50300 \
+  -v /volume4/docker/slskd:/app \
+  -v /volume4/docker/slskd/slskd.yml:/app/slskd.yml:ro \
+  -v /volume1/music:/music:ro \
+  -v /volume4/docker/slskd-app/downloads:/downloads \
+  -v /volume4/docker/slskd-app/incomplete:/incomplete \
+  --network=music \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL \
+  --restart unless-stopped \
+  slskd/slskd:0.25.1
+
+# this service
+docker run -d \
+  --name=navidrome-listenbrainz-jams \
+  --user 1024:100 \
+  -v /volume1/music/weekly_jams:/music \
+  -v /volume4/docker/slskd-app/downloads:/slskd_downloads \
+  -v /volume4/docker/navidrome-listenbrainz-jams/config.yaml:/config/config.yaml:ro \
+  -v /volume4/docker/navidrome-listenbrainz-jams/state:/data \
+  -p 8081:8080 \
+  --network=music \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL \
+  --restart unless-stopped \
+  emqz/navidrome-listenbrainz-jams:latest
+```
+
+They key things is mounting download folders with correct permissions/paths as this app requires access to both slskd downloads directory and some directory where we would move those downloads to (in example above - to `/volume1/music/weekly_jams` which is mounted as `/music`)
+
+Then my `config.yaml` looks like this:
+
+```yaml
+poll_interval: 1m
+
+navidrome:
+  url: http://navidrome:4533
+  admin_user: <admin login> # admin user is used to trigger re-sync
+  admin_pass: <admin password>
+
+slskd:
+  url: http://slskd:5030
+  api_key: <api token - see slskd.yml in this repo for references>
+
+paths:
+  slskd_downloads: /slskd_downloads
+  import_dir: /music
+
+download:
+  format_preference: [opus, mp3, flac]
+  min_bitrate: 216
+  per_track_timeout: 1h
+  max_retries: 30
+
+matching:
+  fuzzy_threshold: 0.85
+
+state:
+  db_path: /data/state.db
+
+web:
+  listen: ":8080"
+
+feeds:
+  - name: emq-discover-weekly
+    rss_url: https://listenbrainz.org/syndication-feed/user/emq/recommendations?recommendation_type=weekly-exploration
+    navidrome_user: <my username>
+    navidrome_pass: <my password>
+  - name: emq-weekly-jams
+    rss_url: "https://listenbrainz.org/syndication-feed/user/emq/recommendations?recommendation_type=weekly-jams"
+    navidrome_user: <my username>
+    navidrome_pass: <my password>
+  # some more playlists here
+
+fingerprint:
+  enabled: true
+  acoustid_api_key: <api key - see readme; optional>
+
+lyrics:
+  enabled: true
+  lrclib_url: https://lrclib.net
+```
 
 ## What it does
 
