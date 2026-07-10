@@ -58,6 +58,8 @@ pending ─┬─ (found in Navidrome) ─────────────�
 downloading ─┬─ (transfer succeeded) ─▶ move file ─▶ downloaded ─(rescan)─▶ (resolve) ─▶ exists ─▶ in_playlist
              └─ (failed / timed out / no candidate) ─▶ missing
 missing ──(retried next tick, until max_retries)──▶ …
+missing (slskd retries exhausted) ─┬─ yt-dlp enabled ─▶ yt-dlp fetch ─▶ downloaded ─(rescan)─▶ …
+                                   └─ (fetch fails / disabled) ─▶ missing (one-shot; stays put)
 ```
 
 - `exists` = found in Navidrome, song id known; gets added to the playlist in
@@ -68,7 +70,13 @@ missing ──(retried next tick, until max_retries)──▶ …
   later tick once indexed. The downloader keeps re-triggering a (throttled)
   rescan for any track left in this state, so it self-heals across restarts.
 - `missing` = not found and not (yet) downloadable. Re-attempted each tick until
-  `attempts` reaches `max_retries`, then left alone (still revivable via Retry).
+  `attempts` reaches `max_retries`, then left alone (still revivable via Retry) —
+  unless the yt-dlp fallback is enabled, in which case one last-resort attempt is
+  made at that point (see *Fallback source (yt-dlp)*).
+
+Each track also records a `source` (`""` / `slskd` / `ytdlp`) marking which
+backend acquired it — dashboard provenance, and the guard that keeps the yt-dlp
+attempt one-shot.
 
 ## Idempotency & resume
 
@@ -97,9 +105,10 @@ resets state in the store; the running daemon picks the change up on its next
 tick (they share the SQLite store).
 
 - **Retry** (per missing track) / **Retry N missing** (per playlist) — reset the
-  track(s) to `pending` (attempts/error cleared) **and** flip the playlist back
-  to `pending`. The only way to revive a `done` playlist or re-attempt
-  retry-exhausted tracks.
+  track(s) to `pending` (attempts/error/`source` cleared) **and** flip the
+  playlist back to `pending`. The only way to revive a `done` playlist or
+  re-attempt retry-exhausted tracks — and, with yt-dlp enabled, clearing `source`
+  is what lets a yt-dlp one-shot start over (slskd first, then yt-dlp again).
 - **Re-sync** (per playlist) — demote every `in_playlist` track back to `exists`
   (keeping its song id — **no re-download**) and reactivate the playlist, forcing
   a fresh re-add from actual Navidrome contents. Use it when a `done` playlist's
@@ -219,6 +228,46 @@ Properties:
   image) and a free AcoustID API key. Disabled by default; downloads are imported
   untagged.
 
+## Fallback source (yt-dlp)
+
+When `ytdlp.enabled` is set, yt-dlp is chained **after** slskd as a last-resort
+source. slskd is always tried first; yt-dlp only gets a turn once slskd has
+exhausted its retries for a track.
+
+- **Handoff predicate.** The chain hands off purely on generic track state —
+  `missing` **and** `attempts >= max_retries` **and** `source != "ytdlp"`. It
+  reaches into neither source's internals.
+- **Synchronous, one-shot.** Unlike slskd (a stateful service polled across
+  ticks), yt-dlp is a stateless subprocess that searches and downloads in one
+  invocation — there is no `downloading` state for it. A single pass either
+  imports a file or fails. Before doing any work it stamps `source = "ytdlp"`, so
+  the attempt is **exactly once**: a failure leaves the track `missing` and the
+  chain won't hand off to yt-dlp again (only a **Retry**, which clears `source`,
+  lets slskd — and then yt-dlp — start over).
+- **What it runs.** `yt-dlp -x --audio-format <fmt> --audio-quality 0
+  --no-playlist --match-filter "duration < <max_duration_s>" -o <scratch>
+  "ytsearch1:<artist> <title>"`, bounded by `ytdlp.timeout`. The `--match-filter`
+  rejects hour-long album/live uploads; the download goes to a scratch dir inside
+  `import_dir` (fast same-fs move, works under `--read-only`).
+- **Same import tail.** On success the file goes through the identical importer as
+  slskd downloads (move + rename + optional fingerprint-tag + optional lyrics +
+  rescan) — the fingerprint tagger is what makes a tag-less YouTube rip index
+  correctly, so pairing it with `fingerprint` is recommended.
+- **Per-tick cost.** A yt-dlp fetch runs synchronously inside the download pass and
+  is counted by the same `maxNewDownloadsPerTick` budget as a slskd search, so a
+  burst of fallbacks can't make one tick run for many minutes.
+- **Wrong-hit quality.** The top YouTube result can be a live/cover/sped-up
+  version. The duration filter catches gross cases; the fingerprint tagger still
+  tags it with *some* MBID. yt-dlp-sourced tracks are badged in the dashboard so
+  they can be spotted and **Delete & restart**ed.
+- **Staleness is operational, not automatic.** The image is immutable and does not
+  self-update. When YouTube breaks the pinned yt-dlp (`Signature extraction
+  failed` in `last_error`), bump `YTDLP_VERSION`/`DENO_VERSION` in the Dockerfile
+  and pull a new image tag.
+- **Requirements** — the `yt-dlp`, `ffmpeg`, and `deno` binaries (all bundled in
+  the Docker image; deno is the JS runtime yt-dlp needs for YouTube signature
+  descrambling). Disabled by default.
+
 ## Rescans
 
 After importing a file, the daemon triggers a Navidrome `startScan` (throttled to
@@ -259,7 +308,9 @@ auto-deleting them risks losing a file before import).
 | Enqueue rejected (peer unreachable) | try next ranked peer (up to ~5); else `missing` |
 | Transfer errored/cancelled/timed-out | record removed, `missing`, re-searched next tick |
 | Download stalls past `per_track_timeout` | abandoned → `missing` |
-| `max_retries` reached | stays `missing`; only Retry revives it |
+| `max_retries` reached (yt-dlp disabled) | stays `missing`; only Retry revives it |
+| `max_retries` reached (yt-dlp enabled) | one yt-dlp fetch attempt; imported on success |
+| yt-dlp fetch fails (no result / error / timeout) | stays `missing`, `source=ytdlp`; one-shot, only Retry re-attempts |
 | Feed fetch fails (network) | logged and skipped; stored playlists still processed |
 | Fingerprint / AcoustID / tag fails | logged; file imported untagged, import proceeds |
 | Playlist's feed removed from config | orphaned/stalled (see above) |

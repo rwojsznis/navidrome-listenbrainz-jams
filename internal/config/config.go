@@ -22,6 +22,7 @@ type Config struct {
 	Matching     Matching      `yaml:"matching"`
 	Fingerprint  Fingerprint   `yaml:"fingerprint"`
 	Lyrics       Lyrics        `yaml:"lyrics"`
+	Ytdlp        Ytdlp         `yaml:"ytdlp"`
 	State        State         `yaml:"state"`
 	Web          Web           `yaml:"web"`
 	Feeds        []Feed        `yaml:"feeds"`
@@ -55,6 +56,32 @@ type Lyrics struct {
 	Enabled bool `yaml:"enabled"`
 	// LrclibURL is the lrclib API base URL (default "https://lrclib.net").
 	LrclibURL string `yaml:"lrclib_url"`
+}
+
+// Ytdlp controls the optional yt-dlp fallback download source. It is tried only
+// after slskd has exhausted its retries for a track: yt-dlp searches YouTube,
+// downloads the top hit's audio, and feeds it through the same import path as
+// slskd downloads. Disabled by default; it requires the external `yt-dlp` and
+// `ffmpeg` binaries (and a JS runtime, `deno`, for YouTube signature
+// descrambling) — all bundled in the Docker image.
+type Ytdlp struct {
+	// Enabled turns the fallback on. When false, a track slskd can't find stays
+	// missing (as before).
+	Enabled bool `yaml:"enabled"`
+	// BinaryPath is the yt-dlp binary (default "yt-dlp" via PATH).
+	BinaryPath string `yaml:"binary_path"`
+	// AudioFormat is the target audio format passed to `yt-dlp -x --audio-format`.
+	// YouTube audio is lossy (opus/aac), so a lossy container ("mp3", default, or
+	// "opus") is right; transcoding to FLAC only bloats a lossy stream.
+	AudioFormat string `yaml:"audio_format"`
+	// MaxDuration bounds an accepted result's length (converted to seconds in
+	// yt-dlp's --match-filter), rejecting hour-long album/live uploads. Default 10m.
+	MaxDuration time.Duration `yaml:"max_duration"`
+	// Timeout caps a single yt-dlp invocation (search + download). Default 5m.
+	Timeout time.Duration `yaml:"timeout"`
+	// CookiesFile is an optional Netscape-format cookies file passed to
+	// `yt-dlp --cookies` for age-restricted or region-locked content.
+	CookiesFile string `yaml:"cookies_file"`
 }
 
 // Web controls the read-only status dashboard.
@@ -143,8 +170,14 @@ var defaults = Config{
 	Matching:    Matching{FuzzyThreshold: 0.85},
 	Fingerprint: Fingerprint{FpcalcPath: "fpcalc", OpustagsPath: "opustags"},
 	Lyrics:      Lyrics{LrclibURL: "https://lrclib.net"},
-	State:       State{DBPath: "/data/state.db"},
-	Web:         Web{Listen: ":8080"},
+	Ytdlp: Ytdlp{
+		BinaryPath:  "yt-dlp",
+		AudioFormat: "mp3",
+		MaxDuration: 10 * time.Minute,
+		Timeout:     5 * time.Minute,
+	},
+	State: State{DBPath: "/data/state.db"},
+	Web:   Web{Listen: ":8080"},
 }
 
 // Load reads, interpolates, parses and validates the config file at path.
@@ -216,6 +249,15 @@ func (c *Config) validate() error {
 	}
 	if c.Fingerprint.Enabled && c.Fingerprint.AcoustIDAPIKey == "" {
 		return fmt.Errorf("fingerprint.acoustid_api_key is required when fingerprint.enabled is true")
+	}
+	if c.Ytdlp.Enabled {
+		switch c.Ytdlp.AudioFormat {
+		case "mp3", "opus", "aac", "m4a", "vorbis", "flac", "wav", "best":
+		case "":
+			return fmt.Errorf("ytdlp.audio_format is required when ytdlp.enabled is true")
+		default:
+			return fmt.Errorf("ytdlp.audio_format %q is not a valid yt-dlp --audio-format", c.Ytdlp.AudioFormat)
+		}
 	}
 	if len(c.Feeds) == 0 {
 		return fmt.Errorf("at least one feed is required")

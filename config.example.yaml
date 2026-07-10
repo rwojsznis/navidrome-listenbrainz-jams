@@ -70,6 +70,27 @@ lyrics:
   # lrclib API base URL. Override only to point at a self-hosted mirror.
   lrclib_url: https://lrclib.net
 
+ytdlp:
+  # Optional yt-dlp fallback source. When enabled, a track slskd can't find
+  # (retries exhausted) gets ONE last-resort attempt from YouTube: yt-dlp
+  # searches "<artist> <title>", downloads the top hit, and feeds it through the
+  # same import path as slskd downloads. Fallback-only and one-shot — slskd is
+  # always tried first. Enabling `fingerprint` alongside is recommended so the
+  # tag-less rip indexes correctly. Requires yt-dlp + ffmpeg + deno (bundled in
+  # the Docker image).
+  enabled: false
+  # Target audio format for `yt-dlp -x`. YouTube audio is lossy, so keep a lossy
+  # container ("mp3" or "opus") — transcoding to FLAC only bloats it.
+  audio_format: mp3
+  # Reject results longer than this (filters hour-long album/live uploads).
+  max_duration: 10m
+  # Cap on a single yt-dlp search+download invocation.
+  timeout: 5m
+  # Override only if the binary isn't on PATH.
+  binary_path: yt-dlp
+  # Optional Netscape-format cookies file for age/region-restricted content.
+  # cookies_file: /config/cookies.txt
+
 web:
   # Read-only status dashboard address. Empty disables it.
   listen: ":8080"

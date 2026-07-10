@@ -7,14 +7,13 @@ package downloader
 import (
 	"context"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/files"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/importer"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/match"
-	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/navidrome"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/slskd"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
 )
@@ -26,61 +25,20 @@ const searchTimeout = 15 * time.Second
 // before giving up for this tick (each failed enqueue can take ~10s in slskd).
 const maxEnqueueAttempts = 5
 
-// scanThrottle dedupes the rescans triggered when several files import (or
-// several downloaded tracks await indexing) within a short window.
-const scanThrottle = 10 * time.Second
-
-// MBIDTagger optionally identifies a freshly imported file and writes its
-// MusicBrainz recording id into the file's tags (so Navidrome indexes it).
-// feedMBID is the feed's recording id, used to prefer a confirmed match. A nil
-// tagger disables the step; failures are non-fatal (logged, import proceeds).
-type MBIDTagger interface {
-	Tag(ctx context.Context, path, feedMBID string) error
-}
-
-// LyricsWriter optionally fetches lyrics for a freshly imported file and writes
-// them as a sibling ".lrc" (no-op if one already exists). A nil writer disables
-// the step; failures are non-fatal (logged, import proceeds).
-type LyricsWriter interface {
-	// WriteAlongside writes a sibling .lrc for the imported file and returns the
-	// resulting lyrics status ("synced"/"plain"/"none") to record on the track.
-	WriteAlongside(ctx context.Context, musicPath, artist, title string) (string, error)
-}
-
-// Downloader drives slskd downloads for tracks missing from Navidrome.
+// Downloader drives slskd downloads for tracks missing from Navidrome. Once a
+// transfer completes it hands the file to the shared importer for the
+// source-agnostic import tail (move + tag + lyrics + rescan).
 type Downloader struct {
-	slskd  *slskd.Client
-	scan   *navidrome.Client // admin-capable client used to trigger library scans
-	cfg    *config.Config
-	tagger MBIDTagger   // optional acoustic-fingerprint tagger
-	lyrics LyricsWriter // optional lyrics fetcher
-	log    *slog.Logger
-
-	lastScan time.Time
+	slskd    *slskd.Client
+	importer *importer.Importer
+	cfg      *config.Config
+	log      *slog.Logger
 }
 
-// SetTagger wires the optional fingerprint/tag step (run on each imported file).
-func (d *Downloader) SetTagger(t MBIDTagger) { d.tagger = t }
-
-// SetLyrics wires the optional lyrics-fetch step (run on each imported file).
-func (d *Downloader) SetLyrics(l LyricsWriter) { d.lyrics = l }
-
-// New returns a Downloader. scan is a Navidrome client used to trigger library
-// rescans after imports (must be admin-capable).
-func New(client *slskd.Client, scan *navidrome.Client, cfg *config.Config, log *slog.Logger) *Downloader {
-	return &Downloader{slskd: client, scan: scan, cfg: cfg, log: log}
-}
-
-// triggerScan asks Navidrome to rescan, throttled so a burst of imports doesn't
-// fire many scans. Ticks are single-threaded, so no locking is needed.
-func (d *Downloader) triggerScan(ctx context.Context) {
-	if !d.lastScan.IsZero() && time.Since(d.lastScan) < scanThrottle {
-		return
-	}
-	d.lastScan = time.Now()
-	if err := d.scan.StartScan(ctx); err != nil {
-		d.log.Warn("trigger rescan", "err", err)
-	}
+// New returns a Downloader. im is the shared importer used to move completed
+// downloads into the library (and run the optional tag/lyrics steps + rescan).
+func New(client *slskd.Client, im *importer.Importer, cfg *config.Config, log *slog.Logger) *Downloader {
+	return &Downloader{slskd: client, importer: im, cfg: cfg, log: log}
 }
 
 // Advance moves a single track one step through the download state machine.
@@ -92,7 +50,7 @@ func (d *Downloader) Advance(ctx context.Context, t *store.Track) (bool, error) 
 	case store.TrackDownloaded, store.TrackImported:
 		// File is in the library but not yet found in Navidrome. Ensure a rescan
 		// so a later resolve pass can pick it up. No state change here.
-		d.triggerScan(ctx)
+		d.importer.TriggerScan(ctx)
 		return false, nil
 	default: // pending or missing: try to (re)start a download
 		return d.start(ctx, t)
@@ -208,45 +166,17 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 		d.log.Warn("completed download not found on disk yet", "file", base)
 		return false, nil
 	}
-	// Rename to a clean "<artist> - <title>.<ext>" from the feed metadata,
-	// instead of the uploader's arbitrary filename. (Navidrome indexes by tags,
-	// so this is purely for a tidy library on disk.)
-	dstDir := d.cfg.Paths.ImportDir
-	name := files.SanitizeFilename(t.Artist + " - " + t.Title)
-	if name != "" {
-		name += filepath.Ext(src)
-	}
-	imported, err := files.Move(src, dstDir, name)
-	if err != nil {
+	// Hand the completed file to the shared importer (move + rename + optional
+	// tag/lyrics + rescan). Provenance is slskd-specific, so record it here.
+	if err := d.importer.Import(ctx, t, src); err != nil {
 		return false, err
 	}
-	t.ImportedPath = imported
-	t.Status = store.TrackDownloaded
-	t.LastError = ""
-	// Optionally fingerprint the imported file and write its MusicBrainz recording
-	// id into the tags before the rescan, so Navidrome indexes it with the id.
-	// Best-effort: a failure leaves the file untagged but still imported.
-	if d.tagger != nil {
-		if err := d.tagger.Tag(ctx, imported, t.RecordingMBID); err != nil {
-			d.log.Warn("fingerprint/tag", "track", t.Title, "err", err)
-		}
-	}
-	// Optionally fetch lyrics and write them as a sibling .lrc. Best-effort: a
-	// failure (or no lyrics found) leaves the file imported without lyrics.
-	if d.lyrics != nil {
-		if status, err := d.lyrics.WriteAlongside(ctx, imported, t.Artist, t.Title); err != nil {
-			d.log.Warn("fetch lyrics", "track", t.Title, "err", err)
-		} else {
-			t.LyricsStatus = status
-		}
-	}
+	t.Source = "slskd"
 	// Remove the now-imported transfer from slskd's list (best-effort; the file
 	// is already moved, so this only clears the record).
 	if err := d.slskd.RemoveDownload(ctx, t.SlskdUsername, transfer.ID); err != nil {
 		d.log.Debug("remove completed transfer", "track", t.Title, "err", err)
 	}
-	d.triggerScan(ctx)
-	d.log.Info("imported download", "track", t.Title, "path", imported)
 	return true, nil
 }
 

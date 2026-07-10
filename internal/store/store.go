@@ -25,13 +25,13 @@ const (
 type TrackStatus string
 
 const (
-	TrackPending     TrackStatus = "pending"      // not yet processed this run
-	TrackExists      TrackStatus = "exists"       // present in Navidrome, songID resolved
-	TrackDownloading TrackStatus = "downloading"  // slskd transfer in flight
-	TrackDownloaded  TrackStatus = "downloaded"   // file completed, awaiting import
-	TrackImported    TrackStatus = "imported"     // moved into library, awaiting rescan match
-	TrackInPlaylist  TrackStatus = "in_playlist"  // added to the Navidrome playlist
-	TrackMissing     TrackStatus = "missing"      // not found / exhausted retries (retried later)
+	TrackPending     TrackStatus = "pending"     // not yet processed this run
+	TrackExists      TrackStatus = "exists"      // present in Navidrome, songID resolved
+	TrackDownloading TrackStatus = "downloading" // slskd transfer in flight
+	TrackDownloaded  TrackStatus = "downloaded"  // file completed, awaiting import
+	TrackImported    TrackStatus = "imported"    // moved into library, awaiting rescan match
+	TrackInPlaylist  TrackStatus = "in_playlist" // added to the Navidrome playlist
+	TrackMissing     TrackStatus = "missing"     // not found / exhausted retries (retried later)
 )
 
 // Playlist is a stored playlist row.
@@ -49,23 +49,27 @@ type Playlist struct {
 
 // Track is a stored track row.
 type Track struct {
-	ID               int64
-	PlaylistID       int64
-	Position         int
-	RecordingMBID    string
-	Artist           string
-	Title            string
-	Status           TrackStatus
-	NavidromeSongID  string
-	SlskdUsername    string
-	SlskdFile        string
-	ImportedPath     string
-	Attempts         int
-	LastError        string
+	ID              int64
+	PlaylistID      int64
+	Position        int
+	RecordingMBID   string
+	Artist          string
+	Title           string
+	Status          TrackStatus
+	NavidromeSongID string
+	SlskdUsername   string
+	SlskdFile       string
+	ImportedPath    string
+	Attempts        int
+	LastError       string
 	// LyricsStatus records the outcome of the optional lyrics step: "synced",
 	// "plain", "none" (looked up, nothing found), or "" (not yet attempted).
 	LyricsStatus string
-	UpdatedAt    time.Time
+	// Source records which backend acquired the track: "" (not yet acquired),
+	// "slskd", or "ytdlp". It provides dashboard provenance and makes the yt-dlp
+	// fallback a one-shot (see internal/downloadchain).
+	Source    string
+	UpdatedAt time.Time
 }
 
 // Store wraps the SQLite connection.
@@ -101,6 +105,7 @@ CREATE TABLE IF NOT EXISTS tracks (
 	attempts          INTEGER NOT NULL DEFAULT 0,
 	last_error        TEXT NOT NULL DEFAULT '',
 	lyrics_status     TEXT NOT NULL DEFAULT '',
+	source            TEXT NOT NULL DEFAULT '',
 	updated_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(playlist_id, recording_mbid)
 );
@@ -135,6 +140,7 @@ func Open(path string) (*Store, error) {
 func migrate(db *sql.DB) error {
 	adds := []string{
 		`ALTER TABLE tracks ADD COLUMN lyrics_status TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range adds {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
@@ -252,7 +258,7 @@ func (s *Store) TracksFor(playlistID int64) ([]Track, error) {
 	rows, err := s.db.Query(`
 		SELECT id, playlist_id, position, recording_mbid, artist, title, status,
 		       navidrome_song_id, slskd_username, slskd_file, imported_path,
-		       attempts, last_error, lyrics_status, updated_at
+		       attempts, last_error, lyrics_status, source, updated_at
 		FROM tracks WHERE playlist_id = ? ORDER BY position`, playlistID)
 	if err != nil {
 		return nil, err
@@ -264,7 +270,7 @@ func (s *Store) TracksFor(playlistID int64) ([]Track, error) {
 		var t Track
 		if err := rows.Scan(&t.ID, &t.PlaylistID, &t.Position, &t.RecordingMBID,
 			&t.Artist, &t.Title, &t.Status, &t.NavidromeSongID, &t.SlskdUsername,
-			&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.LyricsStatus, &t.UpdatedAt); err != nil {
+			&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.LyricsStatus, &t.Source, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -277,12 +283,12 @@ func (s *Store) TrackByID(id int64) (*Track, error) {
 	row := s.db.QueryRow(`
 		SELECT id, playlist_id, position, recording_mbid, artist, title, status,
 		       navidrome_song_id, slskd_username, slskd_file, imported_path,
-		       attempts, last_error, lyrics_status, updated_at
+		       attempts, last_error, lyrics_status, source, updated_at
 		FROM tracks WHERE id = ?`, id)
 	var t Track
 	err := row.Scan(&t.ID, &t.PlaylistID, &t.Position, &t.RecordingMBID,
 		&t.Artist, &t.Title, &t.Status, &t.NavidromeSongID, &t.SlskdUsername,
-		&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.LyricsStatus, &t.UpdatedAt)
+		&t.SlskdFile, &t.ImportedPath, &t.Attempts, &t.LastError, &t.LyricsStatus, &t.Source, &t.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -369,10 +375,11 @@ func (s *Store) ResyncPlaylist(playlistID int64) (int, error) {
 // resetTrackSQL clears a track's progress so it is searched/downloaded afresh.
 // The caller appends a WHERE clause and supplies the new status as the first arg.
 // Lyrics status is cleared too: a reset re-downloads the file, so any previously
-// fetched lyrics state is stale.
+// fetched lyrics state is stale. Source is cleared so a retried track starts over
+// from slskd (rather than being treated as an exhausted yt-dlp one-shot).
 const resetTrackSQL = `UPDATE tracks SET status = ?, attempts = 0, last_error = '',
 	slskd_username = '', slskd_file = '', navidrome_song_id = '',
-	imported_path = '', lyrics_status = '', updated_at = CURRENT_TIMESTAMP`
+	imported_path = '', lyrics_status = '', source = '', updated_at = CURRENT_TIMESTAMP`
 
 // UpdateTrack persists the mutable fields of a track.
 func (s *Store) UpdateTrack(t *Track) error {
@@ -380,10 +387,10 @@ func (s *Store) UpdateTrack(t *Track) error {
 		UPDATE tracks SET
 			status = ?, navidrome_song_id = ?, slskd_username = ?, slskd_file = ?,
 			imported_path = ?, attempts = ?, last_error = ?, lyrics_status = ?,
-			updated_at = CURRENT_TIMESTAMP
+			source = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		t.Status, t.NavidromeSongID, t.SlskdUsername, t.SlskdFile,
-		t.ImportedPath, t.Attempts, t.LastError, t.LyricsStatus, t.ID)
+		t.ImportedPath, t.Attempts, t.LastError, t.LyricsStatus, t.Source, t.ID)
 	return err
 }
 

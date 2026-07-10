@@ -695,6 +695,7 @@ const pageTemplates = `
       <div class="track-meta">
         {{if eq .LyricsStatus "synced"}}<span class="mi st s-lyrics-synced">♪ synced</span>
         {{else if eq .LyricsStatus "plain"}}<span class="mi st s-lyrics-plain">♪ plain</span>{{end}}
+        {{if eq .Source "ytdlp"}}<span class="mi" title="acquired via the yt-dlp fallback (top YouTube hit) — verify quality">▶ yt-dlp</span>{{end}}
         {{if .SlskdUsername}}<span class="mi">⬇ {{.SlskdUsername}}</span>{{end}}
         {{if .Attempts}}<span class="mi">{{.Attempts}} {{if eq .Attempts 1}}try{{else}}tries{{end}}</span>{{end}}
         {{if .ImportedPath}}<span class="mi">{{base .ImportedPath}}</span>{{end}}
