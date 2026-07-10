@@ -62,6 +62,68 @@ func TestWriteFLAC(t *testing.T) {
 	}
 }
 
+func TestWriteBasicFLAC(t *testing.T) {
+	path := copyFixture(t, ".flac")
+	w := Writer{}
+	if err := w.WriteBasic(context.Background(), path, "The Beatles", "Come Together"); err != nil {
+		t.Fatal(err)
+	}
+	// Idempotent re-write must not duplicate the fields.
+	if err := w.WriteBasic(context.Background(), path, "The Beatles", "Come Together"); err != nil {
+		t.Fatal(err)
+	}
+	// A subsequent MBID write must preserve the artist/title just set.
+	if err := w.WriteRecordingMBID(context.Background(), path, testMBID); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := flac.ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var artist, title, mbid []string
+	for _, m := range f.Meta {
+		if m.Type == flac.VorbisComment {
+			cmt, _ := flacvorbis.ParseFromMetaDataBlock(*m)
+			artist, _ = cmt.Get("ARTIST")
+			title, _ = cmt.Get("TITLE")
+			mbid, _ = cmt.Get(vorbisRecordingIDField)
+		}
+	}
+	if len(artist) != 1 || artist[0] != "The Beatles" {
+		t.Errorf("ARTIST = %v, want exactly [The Beatles]", artist)
+	}
+	if len(title) != 1 || title[0] != "Come Together" {
+		t.Errorf("TITLE = %v, want exactly [Come Together]", title)
+	}
+	if len(mbid) != 1 || mbid[0] != testMBID {
+		t.Errorf("recording id = %v, want it preserved alongside basic tags", mbid)
+	}
+}
+
+func TestWriteBasicMP3(t *testing.T) {
+	path := copyFixture(t, ".mp3")
+	w := Writer{}
+	if err := w.WriteBasic(context.Background(), path, "Queen", "Bohemian Rhapsody"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteBasic(context.Background(), path, "Queen", "Bohemian Rhapsody"); err != nil {
+		t.Fatal(err)
+	}
+
+	tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tag.Close()
+	if got := tag.Artist(); got != "Queen" {
+		t.Errorf("artist = %q, want Queen", got)
+	}
+	if got := tag.Title(); got != "Bohemian Rhapsody" {
+		t.Errorf("title = %q, want Bohemian Rhapsody", got)
+	}
+}
+
 func TestWriteMP3(t *testing.T) {
 	path := copyFixture(t, ".mp3")
 	w := Writer{}

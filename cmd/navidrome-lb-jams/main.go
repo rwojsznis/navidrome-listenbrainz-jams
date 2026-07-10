@@ -15,9 +15,11 @@ import (
 	"time"
 
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/config"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/downloadchain"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/downloader"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/files"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/fingerprint"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/importer"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/listenbrainz"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/lyrics"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/navidrome"
@@ -26,6 +28,7 @@ import (
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/store"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/tags"
 	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/web"
+	"github.com/rwojsznis/navidrome-listenbrainz-jams/internal/ytdlp"
 )
 
 func main() {
@@ -58,17 +61,20 @@ func main() {
 	scanUser, scanPass := cfg.ScanUser()
 	scanClient := navidrome.New(cfg.Navidrome.URL, scanUser, scanPass)
 	pipe := pipeline.New(st, cfg, logger)
-	dl := downloader.New(slskd.New(cfg.Slskd.URL, cfg.Slskd.APIKey), scanClient, cfg, logger)
+	// One shared importer runs the source-agnostic import tail (move + optional
+	// tag/lyrics + rescan) for every download source.
+	imp := importer.New(scanClient, cfg, logger)
+	dl := downloader.New(slskd.New(cfg.Slskd.URL, cfg.Slskd.APIKey), imp, cfg, logger)
 	var tagger *fingerprint.Service
 	if cfg.Fingerprint.Enabled {
 		tagger = fingerprint.New(cfg, logger)
-		dl.SetTagger(tagger)
+		imp.SetTagger(tagger)
 		slog.Info("acoustic fingerprinting enabled")
 	}
 	var rescanLyrics web.RescanLyricsFunc
 	if cfg.Lyrics.Enabled {
 		lyricsSvc := lyrics.New(cfg.Lyrics.LrclibURL, logger)
-		dl.SetLyrics(lyricsSvc)
+		imp.SetLyrics(lyricsSvc)
 		slog.Info("lyrics fetching enabled", "source", cfg.Lyrics.LrclibURL)
 
 		// Manual "re-scan lyrics" action: fetch a sibling .lrc for every imported
@@ -101,7 +107,16 @@ func main() {
 			return processed, nil
 		}
 	}
-	pipe.SetDownloader(dl)
+	// slskd is the primary source. When enabled, yt-dlp is chained as a
+	// last-resort fallback: it's tried only after slskd exhausts its retries for a
+	// track, feeding results through the same shared importer.
+	if cfg.Ytdlp.Enabled {
+		yt := ytdlp.New(cfg, imp, tags.Writer{OpustagsPath: cfg.Fingerprint.OpustagsPath}, logger)
+		pipe.SetDownloader(downloadchain.New(dl, yt, cfg))
+		slog.Info("yt-dlp fallback enabled", "audio_format", cfg.Ytdlp.AudioFormat)
+	} else {
+		pipe.SetDownloader(dl)
+	}
 
 	// Manual "tag MBID" action for a track stuck in "downloaded" (imported but
 	// not matched in Navidrome). We downloaded the file FOR a specific feed

@@ -142,6 +142,8 @@ On a configurable interval, for each configured feed:
    artist + title.
 3. **Download** tracks not in the library via slskd: pick the best candidate
    (format preference, bitrate, free upload slot), enqueue, and poll the transfer.
+   *Optionally*, once slskd exhausts its retries for a track, fall back to
+   **yt-dlp** (top YouTube hit) as a last resort.
 4. **Import** completed downloads into the Navidrome music library and trigger a
    rescan. *Optionally* fingerprint each file (Chromaprint + AcoustID) and write
    its MusicBrainz recording id into the tags, so Navidrome — and the resolve
@@ -152,6 +154,11 @@ On a configurable interval, for each configured feed:
 It is **idempotent** and **resumable**: state is kept in SQLite, an existing
 playlist is never duplicated, and missing tracks are backfilled on later runs
 (best-effort). A playlist is considered done only when every track is placed.
+
+> [!NOTE]
+> An optional **yt-dlp fallback** source can fetch a track from YouTube once slskd
+> exhausts its retries — see [yt-dlp fallback](#yt-dlp-fallback-optional) below.
+> Off by default.
 
 For the full runtime behavior — state machines, feed add/remove semantics,
 search/ranking strategy, cleanup, and failure handling — see
@@ -177,9 +184,14 @@ See [`docs/behavior.md`](docs/behavior.md#dashboard-actions) for what each does.
 ListenBrainz RSS ─▶ [service] ─search─▶ Navidrome ── found ─▶ add to playlist
                          │
                          └─ missing ─▶ slskd ─download─▶ slskd downloads dir
-                                                              │ (move)
-                                       import dir (in Navidrome library) ─rescan─▶ found ─▶ add
+                                          │                   │ (move)
+              (slskd retries exhausted)   │    import dir (in Navidrome library) ─rescan─▶ found ─▶ add
+                         ┌────────────────┘                   ▲
+                         └─ yt-dlp (optional) ─download─▶ scratch ─(move)─┘
 ```
+
+Both sources feed the **same import path** (move → optional fingerprint-tag →
+optional lyrics → rescan); only the acquisition differs.
 
 The service mounts slskd's **completed downloads** directory (read-only) and a
 **dedicated import folder inside** Navidrome's library (read-write), and moves
@@ -207,6 +219,12 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `fingerprint.acoustid_api_key` | Free AcoustID **application** key ([register an app](https://acoustid.org/new-application)) — required when enabled |
 | `lyrics.enabled` | Fetch lyrics from lrclib.net and write a sibling `.lrc` per import (default off) |
 | `lyrics.lrclib_url` | lrclib API base URL (default `https://lrclib.net`) |
+| `ytdlp.enabled` | Turn on the yt-dlp fallback source, tried after slskd exhausts retries (default off) |
+| `ytdlp.audio_format` | Target audio format for `yt-dlp -x` (default `mp3`; `opus` also sensible — YouTube is lossy, don't use FLAC) |
+| `ytdlp.max_duration` | Reject results longer than this (filters album/live uploads; default `10m`) |
+| `ytdlp.timeout` | Cap on a single yt-dlp search+download (default `5m`) |
+| `ytdlp.binary_path` | yt-dlp binary (default `yt-dlp` on PATH) |
+| `ytdlp.cookies_file` | Optional cookies file for age/region-restricted content (`yt-dlp --cookies`) |
 | `web.listen` | Dashboard address, e.g. `:8080` (empty disables it) |
 | `feeds[]` | One entry per feed: `name`, `rss_url`, `navidrome_user`, `navidrome_pass` |
 
@@ -249,6 +267,32 @@ lyrics** button on the playlist page fetches lyrics for every imported track tha
 doesn't already have a `.lrc` — handy for backfilling tracks imported before the
 feature was enabled. It runs in the background; reload the page to see updated
 statuses.
+
+### yt-dlp fallback (optional)
+
+When `ytdlp.enabled` is true, a track that slskd **can't find** (retries
+exhausted) gets one last-resort attempt from YouTube via
+[yt-dlp](https://github.com/yt-dlp/yt-dlp): it searches for `<artist> <title>`,
+downloads the **top hit's** audio, and feeds it through the *same* import path as
+slskd downloads (move → optional fingerprint-tag → optional lyrics → rescan). The
+fingerprint tagger is what makes a tag-less YouTube rip index correctly, so
+enabling `fingerprint` alongside is recommended.
+
+It is deliberately **fallback-only, off by default, and one-shot**: slskd is
+always tried first, and each track gets exactly one yt-dlp attempt (tracked via a
+`source` column) so a failure can't loop. Results are bounded by
+`ytdlp.max_duration` (rejects hour-long album/live uploads) and `ytdlp.timeout`.
+A yt-dlp-sourced track is badged **▶ yt-dlp** in the dashboard — the top hit can
+be a live/cover/sped-up version, so use **Delete & restart** if the quality is
+wrong.
+
+**Requirements & operational note.** The Docker image bundles `ffmpeg` (for
+`yt-dlp -x`), a **pinned** `yt-dlp`, and **deno** (the JS runtime yt-dlp needs for
+YouTube signature descrambling). YouTube periodically breaks older yt-dlp builds
+(`Signature extraction failed`); the image is **immutable and does not
+self-update** — when that happens, bump `YTDLP_VERSION` (and `DENO_VERSION`) in
+the `Dockerfile` and pull a fresh image tag. A run of yt-dlp `last_error`s on the
+dashboard is the signal.
 
 ## Running
 
@@ -304,6 +348,9 @@ internal/match          fuzzy artist/title matching
 internal/files          locate, move, and delete completed downloads
 internal/store          SQLite state
 internal/downloader     slskd-backed download step (pipeline.Downloader)
+internal/ytdlp          optional yt-dlp fallback source (pipeline.Downloader)
+internal/downloadchain  chains slskd -> yt-dlp fallback
+internal/importer       shared post-download import (move + tag + lyrics + rescan)
 internal/fingerprint    optional Chromaprint/AcoustID identification
 internal/lyrics         optional lrclib.net lyrics -> sibling .lrc
 internal/tags           write MusicBrainz recording id into FLAC/MP3/Opus

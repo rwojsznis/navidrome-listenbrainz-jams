@@ -58,17 +58,47 @@ func (w Writer) WriteRecordingMBID(ctx context.Context, path, mbid string) error
 	}
 }
 
+// WriteBasic writes the artist and title tags into the file. It exists for
+// sources whose audio arrives with NO embedded tags (yt-dlp rips of YouTube
+// audio): without these Navidrome indexes the file as "[Unknown Artist]" with the
+// filename as its title. slskd downloads already carry the uploader's tags, so
+// this is not used for them. Idempotent: any existing artist/title is replaced.
+// Unsupported extensions return an error so the caller can log and move on.
+func (w Writer) WriteBasic(ctx context.Context, path, artist, title string) error {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".flac":
+		return writeFLACBasic(path, artist, title)
+	case ".mp3":
+		return writeMP3Basic(path, artist, title)
+	case ".opus", ".ogg":
+		return w.writeOpusBasic(ctx, path, artist, title)
+	default:
+		return fmt.Errorf("unsupported format for tagging: %s", filepath.Ext(path))
+	}
+}
+
 // writeOpus sets the recording-id Vorbis comment via opustags. `--set` is
 // shorthand for delete-field + add, so it is idempotent; `--in-place` edits the
 // file directly (opustags writes to a temp file and renames, so a failure can't
 // corrupt the original).
 func (w Writer) writeOpus(ctx context.Context, path, mbid string) error {
+	return w.opustags(ctx, path, "--set", vorbisRecordingIDField+"="+mbid)
+}
+
+// writeOpusBasic sets the artist and title Vorbis comments via opustags.
+func (w Writer) writeOpusBasic(ctx context.Context, path, artist, title string) error {
+	return w.opustags(ctx, path, "--set", "ARTIST="+artist, "--set", "TITLE="+title)
+}
+
+// opustags runs an in-place opustags edit with the given field operations.
+func (w Writer) opustags(ctx context.Context, path string, ops ...string) error {
 	bin := w.OpustagsPath
 	if bin == "" {
 		bin = "opustags"
 	}
-	cmd := exec.CommandContext(ctx, bin, "--in-place",
-		"--set", vorbisRecordingIDField+"="+mbid, path)
+	args := append([]string{"--in-place"}, ops...)
+	args = append(args, path)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("opustags: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -76,6 +106,27 @@ func (w Writer) writeOpus(ctx context.Context, path, mbid string) error {
 }
 
 func writeFLAC(path, mbid string) error {
+	return updateFLACComments(path, func(cmt *flacvorbis.MetaDataBlockVorbisComment) error {
+		dropVorbisField(cmt, vorbisRecordingIDField)
+		return cmt.Add(vorbisRecordingIDField, mbid)
+	})
+}
+
+func writeFLACBasic(path, artist, title string) error {
+	return updateFLACComments(path, func(cmt *flacvorbis.MetaDataBlockVorbisComment) error {
+		dropVorbisField(cmt, "ARTIST")
+		dropVorbisField(cmt, "TITLE")
+		if err := cmt.Add("ARTIST", artist); err != nil {
+			return err
+		}
+		return cmt.Add("TITLE", title)
+	})
+}
+
+// updateFLACComments loads path's Vorbis comment block (creating one if absent),
+// applies mutate, and saves. It centralizes the parse/find/marshal/save dance so
+// the recording-id and basic-tag writers share identical, safe handling.
+func updateFLACComments(path string, mutate func(*flacvorbis.MetaDataBlockVorbisComment) error) error {
 	f, err := flac.ParseFile(path)
 	if err != nil {
 		return fmt.Errorf("parse flac: %w", err)
@@ -96,17 +147,8 @@ func writeFLAC(path, mbid string) error {
 		}
 	}
 
-	// Drop any existing recording-id comment so re-tagging doesn't duplicate it.
-	prefix := vorbisRecordingIDField + "="
-	kept := cmt.Comments[:0]
-	for _, c := range cmt.Comments {
-		if !strings.HasPrefix(strings.ToUpper(c), prefix) {
-			kept = append(kept, c)
-		}
-	}
-	cmt.Comments = kept
-	if err := cmt.Add(vorbisRecordingIDField, mbid); err != nil {
-		return fmt.Errorf("add vorbis comment: %w", err)
+	if err := mutate(cmt); err != nil {
+		return fmt.Errorf("update vorbis comment: %w", err)
 	}
 
 	block := cmt.Marshal()
@@ -119,6 +161,19 @@ func writeFLAC(path, mbid string) error {
 		return fmt.Errorf("save flac: %w", err)
 	}
 	return nil
+}
+
+// dropVorbisField removes every "FIELD=..." comment (case-insensitive) so a
+// re-write replaces rather than duplicates it.
+func dropVorbisField(cmt *flacvorbis.MetaDataBlockVorbisComment, field string) {
+	prefix := strings.ToUpper(field) + "="
+	kept := cmt.Comments[:0]
+	for _, c := range cmt.Comments {
+		if !strings.HasPrefix(strings.ToUpper(c), prefix) {
+			kept = append(kept, c)
+		}
+	}
+	cmt.Comments = kept
 }
 
 func writeMP3(path, mbid string) error {
@@ -134,6 +189,22 @@ func writeMP3(path, mbid string) error {
 		OwnerIdentifier: mbOwner,
 		Identifier:      []byte(mbid),
 	})
+	if err := tag.Save(); err != nil {
+		return fmt.Errorf("save mp3: %w", err)
+	}
+	return nil
+}
+
+func writeMP3Basic(path, artist, title string) error {
+	tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
+	if err != nil {
+		return fmt.Errorf("open mp3: %w", err)
+	}
+	defer tag.Close()
+
+	// SetArtist/SetTitle replace the TPE1/TIT2 frames, so this stays idempotent.
+	tag.SetArtist(artist)
+	tag.SetTitle(title)
 	if err := tag.Save(); err != nil {
 		return fmt.Errorf("save mp3: %w", err)
 	}
