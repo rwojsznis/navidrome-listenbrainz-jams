@@ -60,7 +60,7 @@ docker run -d \
   --security-opt no-new-privileges:true \
   --cap-drop ALL \
   --restart unless-stopped \
-  emqz/navidrome-listenbrainz-jams:latest # proper release cycle TBD
+  ghcr.io/rwojsznis/navidrome-listenbrainz-jams:latest # proper release cycle TBD
 ```
 
 They key things is mounting download folders with correct permissions/paths as this app requires access to both slskd downloads directory and some directory where we would move those downloads to (in example above - to `/volume1/music/weekly_jams` which is mounted as `/music`)
