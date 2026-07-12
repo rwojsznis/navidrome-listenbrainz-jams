@@ -1,7 +1,9 @@
 name: Publish Docker image
 
-# On-demand only for now. Trigger from the Actions tab.
+# Called by CI after tests pass. Can also be triggered manually from the
+# Actions tab (builds `latest` from the default branch).
 on:
+  workflow_call:
   workflow_dispatch:
 
 jobs:
@@ -13,6 +15,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -30,6 +41,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
