@@ -47,6 +47,22 @@
         "docker"
       ],
       "enabled": true
+    },
+    {
+      "description": "After bumping the yt-dlp/deno version ARGs, refresh their pinned SHA256 checksums so the Docker build's checksum verification still passes.",
+      "matchDepNames": [
+        "yt-dlp/yt-dlp",
+        "denoland/deno"
+      ],
+      "postUpgradeTasks": {
+        "commands": [
+          "bash .github/scripts/update-binary-shas.sh Dockerfile"
+        ],
+        "fileFilters": [
+          "Dockerfile"
+        ],
+        "executionMode": "branch"
+      }
     }
   ]
 }

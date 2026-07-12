@@ -30,3 +30,8 @@ jobs:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           LOG_LEVEL: info
           RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || null }}
+          # postUpgradeTasks in renovate.json refreshes the pinned yt-dlp/deno
+          # SHA256s. Running a shell command is gated behind this allowlist, which
+          # for security can only be set in the bot's (global) config, not the
+          # repo's renovate.json. The regex must match the command exactly.
+          RENOVATE_ALLOWED_COMMANDS: '["^bash \\.github/scripts/update-binary-shas\\.sh Dockerfile$"]'
