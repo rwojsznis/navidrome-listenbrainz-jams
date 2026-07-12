@@ -63,6 +63,14 @@
         ],
         "executionMode": "branch"
       }
+    },
+    {
+      "description": "Keep the Go version aligned across go.mod, mise.toml and the golang Docker image by updating them in one PR.",
+      "matchDepNames": [
+        "go",
+        "golang"
+      ],
+      "groupName": "go"
     }
   ]
 }
