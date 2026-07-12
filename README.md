@@ -286,14 +286,6 @@ A yt-dlp-sourced track is badged **▶ yt-dlp** in the dashboard — the top hit
 be a live/cover/sped-up version, so use **Delete & restart** if the quality is
 wrong.
 
-**Requirements & operational note.** The Docker image bundles `ffmpeg` (for
-`yt-dlp -x`), a **pinned** `yt-dlp`, and **deno** (the JS runtime yt-dlp needs for
-YouTube signature descrambling). YouTube periodically breaks older yt-dlp builds
-(`Signature extraction failed`); the image is **immutable and does not
-self-update** — when that happens, bump `YTDLP_VERSION` (and `DENO_VERSION`) in
-the `Dockerfile` and pull a fresh image tag. A run of yt-dlp `last_error`s on the
-dashboard is the signal.
-
 ## Running
 
 ### Docker (recommended, e.g. on a NAS)

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "gomod": {
+    "enabled": true
+  },
+  "github-actions": {
+    "enabled": true
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "yt-dlp binary pinned as an ARG in the Dockerfile",
+      "managerFilePatterns": [
+        "/(^|/)Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG YTDLP_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "yt-dlp/yt-dlp",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "description": "deno binary pinned as an ARG in the Dockerfile",
+      "managerFilePatterns": [
+        "/(^|/)Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG DENO_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "denoland/deno",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchCategories": [
+        "docker"
+      ],
+      "enabled": true
+    }
+  ]
+}
