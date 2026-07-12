@@ -71,6 +71,16 @@
         "golang"
       ],
       "groupName": "go"
+    },
+    {
+      "description": "Renovate ignores the go.mod `go` directive by default; enable bumps so it moves together with mise.toml and the golang Docker image.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "golang"
+      ],
+      "rangeStrategy": "bump"
     }
   ]
 }
