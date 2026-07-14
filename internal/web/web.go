@@ -126,6 +126,8 @@ func countTracks(tracks []store.Track) counts {
 
 // --- handlers ---
 
+const perPage = 10
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -136,8 +138,30 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	rows := make([]playlistRow, 0, len(playlists))
-	for _, p := range playlists {
+
+	// Playlists come newest-first. Paginate so the page shows only the most
+	// recent perPage; the ?page= query selects the window (1-based).
+	total := len(playlists)
+	totalPages := (total + perPage - 1) / perPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	page := 1
+	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 1 {
+		page = p
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	start := (page - 1) * perPage
+	end := start + perPage
+	if end > total {
+		end = total
+	}
+	pagePlaylists := playlists[start:end]
+
+	rows := make([]playlistRow, 0, len(pagePlaylists))
+	for _, p := range pagePlaylists {
 		tracks, err := s.store.TracksFor(p.ID)
 		if err != nil {
 			s.fail(w, err)
@@ -145,7 +169,17 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, playlistRow{Playlist: p, Counts: countTracks(tracks)})
 	}
-	s.render(w, "index", map[string]any{"Playlists": rows})
+	s.render(w, "index", map[string]any{
+		"Playlists":  rows,
+		"Total":      total,
+		"Page":       page,
+		"TotalPages": totalPages,
+		"HasPrev":    page > 1,
+		"HasNext":    page < totalPages,
+		"PrevPage":   page - 1,
+		"NextPage":   page + 1,
+		"StartNum":   start, // offset for global numbering
+	})
 }
 
 func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
@@ -397,6 +431,7 @@ var funcs = template.FuncMap{
 		return s
 	},
 	"inc": func(n int) int { return n + 1 },
+	"add": func(a, b int) int { return a + b },
 }
 
 var tmpl = template.Must(template.New("").Funcs(funcs).Parse(pageTemplates))
@@ -582,14 +617,19 @@ const pageTemplates = `
   .src { font-size: .68rem; color: var(--muted); word-break: break-all; }
   .empty { text-align: center; padding: 4rem 1rem; color: var(--muted); border: 1px dashed var(--line-2); border-radius: var(--radius); }
 
-  footer { margin-top: 2.5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  /* --- pagination --- */
+  .pager { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1.6rem; }
+  .pager a, .pager .disabled { display: inline-flex; align-items: center; gap: .35rem; font-size: .74rem; letter-spacing: .06em; padding: .4rem .85rem; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel-2); color: var(--ink); transition: border-color .15s, background .15s, color .15s; }
+  .pager a:hover { border-color: var(--muted); background: var(--hover); color: var(--amber); }
+  .pager .disabled { opacity: .4; pointer-events: none; }
+  .pager .page-info { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 </style>
 <script>
 (function(){try{var t=localStorage.getItem('theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 </script>
 </head><body>{{end}}
 
-{{define "foot"}}<footer>navidrome · listenbrainz · jams</footer></body></html>{{end}}
+{{define "foot"}}</body></html>{{end}}
 
 {{define "ico-pending"}}<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.4 1.6"/></svg>{{end}}
 
@@ -605,7 +645,7 @@ const pageTemplates = `
     <div class="kicker">ListenBrainz → Navidrome</div>
     <h1>Weekly Jams</h1>
   </div>
-  <div class="count-badge"><b>{{len .Playlists}}</b><span class="muted">playlists</span></div>
+  <div class="count-badge"><b>{{.Total}}</b><span class="muted">playlists</span></div>
   {{template "theme-toggle"}}
 </div>
 {{if not .Playlists}}
@@ -614,7 +654,7 @@ const pageTemplates = `
 <div class="stack">
 {{range $i, $p := .Playlists}}
 <a class="card{{if isDone $p.Status}} is-done{{end}}" href="/playlist/{{$p.ID}}">
-  <span class="num">{{pad2 (inc $i)}}</span>
+  <span class="num">{{pad2 (inc (add $.StartNum $i))}}</span>
   <div class="body">
     <div class="top">
       <h2>{{$p.Title}}</h2>
@@ -636,6 +676,13 @@ const pageTemplates = `
 </a>
 {{end}}
 </div>
+{{if gt .TotalPages 1}}
+<nav class="pager">
+  {{if .HasPrev}}<a href="/?page={{.PrevPage}}">← newer</a>{{else}}<span class="disabled">← newer</span>{{end}}
+  <span class="page-info">page {{.Page}} of {{.TotalPages}}</span>
+  {{if .HasNext}}<a href="/?page={{.NextPage}}">older →</a>{{else}}<span class="disabled">older →</span>{{end}}
+</nav>
+{{end}}
 {{end}}
 {{template "foot"}}
 {{end}}
