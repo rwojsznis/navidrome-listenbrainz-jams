@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/navidrome-lb-jams ./cmd/navi
 FROM debian:trixie-slim AS fetch
 ARG TARGETARCH
 ARG YTDLP_VERSION=2026.07.04
-ARG DENO_VERSION=v2.9.2
+ARG DENO_VERSION=v2.9.3
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends curl ca-certificates unzip \
 	&& rm -rf /var/lib/apt/lists/*
@@ -32,12 +32,12 @@ RUN set -eux; \
 	    YTDLP_ASSET=yt-dlp_linux; \
 	    YTDLP_SHA=6bbb3d314cde4febe36e5fa1d55462e29c974f63444e707871834f6d8cc210ae; \
 	    DENO_ASSET=deno-x86_64-unknown-linux-gnu.zip; \
-	    DENO_SHA=934d1bd5cb09eaed7f2e4a4fc58208d04a3c5c0fcde9f319d93d735265c67a4a ;; \
+	    DENO_SHA=8101865641cbede56f08ad19c0a67a87df84bce127fee0d3e3e1f7467717ffa6 ;; \
 	  arm64) \
 	    YTDLP_ASSET=yt-dlp_linux_aarch64; \
 	    YTDLP_SHA=b6ce97646773070d7a7ffd6bbbdcaecb47c48483909c54c915bf08a7a9b5e0b1; \
 	    DENO_ASSET=deno-aarch64-unknown-linux-gnu.zip; \
-	    DENO_SHA=310b8f48e59964ff18890d35e64f64fb90e8b1cc5d9ebff8c818327d5afb16d2 ;; \
+	    DENO_SHA=753937db98a4b56cbbbd26e8f00eb4b789191a229afec93f74bcfa4e79bc2c8b ;; \
 	  *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
 	esac; \
 	curl -fsSL -o /tmp/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${YTDLP_ASSET}"; \
