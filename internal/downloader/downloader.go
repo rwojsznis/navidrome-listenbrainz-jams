@@ -7,6 +7,7 @@ package downloader
 import (
 	"context"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -172,6 +173,12 @@ func (d *Downloader) poll(ctx context.Context, t *store.Track) (bool, error) {
 		return false, err
 	}
 	t.Source = "slskd"
+	// The audio file has been moved out, leaving slskd's per-download subfolder
+	// empty. Prune it (and any now-empty ancestors) up to the downloads root so
+	// they don't accumulate. Best-effort: a non-empty dir just stops the climb.
+	if err := files.PruneEmptyDirs(d.cfg.Paths.SlskdDownloads, filepath.Dir(src)); err != nil {
+		d.log.Debug("prune empty download dir", "dir", filepath.Dir(src), "err", err)
+	}
 	// Remove the now-imported transfer from slskd's list (best-effort; the file
 	// is already moved, so this only clears the record).
 	if err := d.slskd.RemoveDownload(ctx, t.SlskdUsername, transfer.ID); err != nil {

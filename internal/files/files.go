@@ -105,6 +105,26 @@ func Remove(path string) error {
 	return nil
 }
 
+// PruneEmptyDirs removes the directory that held an imported file and any now-
+// empty ancestors, walking up until it reaches root (which is never removed).
+// slskd nests each download in a per-peer/per-album subfolder; once we've moved
+// the audio file out, that subfolder is left behind empty. Removal stops at the
+// first non-empty directory (os.Remove fails on a non-empty dir), so folders
+// still holding other downloads or leftover files are preserved. All failures
+// are non-fatal and reported to the caller only for logging.
+func PruneEmptyDirs(root, fileDir string) error {
+	root = filepath.Clean(root)
+	dir := filepath.Clean(fileDir)
+	for dir != root && strings.HasPrefix(dir, root+string(os.PathSeparator)) {
+		if err := os.Remove(dir); err != nil {
+			// Not empty, or gone already — stop climbing.
+			return err
+		}
+		dir = filepath.Dir(dir)
+	}
+	return nil
+}
+
 // uniquePath returns p, or p with a " (n)" suffix before the extension if p
 // already exists.
 func uniquePath(p string) string {
