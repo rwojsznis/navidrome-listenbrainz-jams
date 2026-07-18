@@ -116,6 +116,42 @@ func TestMoveWithCollision(t *testing.T) {
 	}
 }
 
+func TestPruneEmptyDirs(t *testing.T) {
+	root := t.TempDir()
+
+	// Nested empty subfolders should be removed up to (but not including) root.
+	nested := filepath.Join(root, "peer", "Album")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := PruneEmptyDirs(root, nested); err == nil {
+		// climbing stops with an error once it hits the non-empty root's parent;
+		// we only care that the empties are gone.
+	}
+	if _, err := os.Stat(filepath.Join(root, "peer")); !os.IsNotExist(err) {
+		t.Error("empty ancestor dirs should be pruned")
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Errorf("root must never be removed: %v", err)
+	}
+
+	// A non-empty dir stops the climb and is preserved.
+	keep := filepath.Join(root, "peer2", "Album")
+	if err := os.MkdirAll(keep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "peer2", "cover.jpg"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = PruneEmptyDirs(root, keep)
+	if _, err := os.Stat(filepath.Join(root, "peer2")); err != nil {
+		t.Errorf("non-empty dir should be preserved: %v", err)
+	}
+	if _, err := os.Stat(keep); !os.IsNotExist(err) {
+		t.Error("empty leaf should still be pruned")
+	}
+}
+
 func TestSanitizeFilename(t *testing.T) {
 	cases := map[string]string{
 		"Foo Fighters - Everlong":       "Foo Fighters - Everlong",
