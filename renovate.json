@@ -44,6 +44,19 @@
   ],
   "packageRules": [
     {
+      "description": "Automerge non-major dependency updates after required CI checks pass.",
+      "matchUpdateTypes": [
+        "patch",
+        "minor",
+        "digest",
+        "pin"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true,
+      "rebaseWhen": "behind-base-branch"
+    },
+    {
       "matchCategories": [
         "docker"
       ],
