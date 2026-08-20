@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/navidrome-lb-jams ./cmd/navi
 # (yt-dlp) and *.sha256sum (deno) files when bumping.
 FROM debian:trixie-slim AS fetch
 ARG TARGETARCH
-ARG YTDLP_VERSION=2026.07.04
+ARG YTDLP_VERSION=2026.08.19
 ARG DENO_VERSION=v2.9.5
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends curl ca-certificates unzip \
@@ -30,12 +30,12 @@ RUN set -eux; \
 	case "$TARGETARCH" in \
 	  amd64) \
 	    YTDLP_ASSET=yt-dlp_linux; \
-	    YTDLP_SHA=6bbb3d314cde4febe36e5fa1d55462e29c974f63444e707871834f6d8cc210ae; \
+	    YTDLP_SHA=58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a; \
 	    DENO_ASSET=deno-x86_64-unknown-linux-gnu.zip; \
 	    DENO_SHA=8b010a3b1a4a0188a67cdb8a7a27348b2a501af78aec7fc74f2ace167368d530 ;; \
 	  arm64) \
 	    YTDLP_ASSET=yt-dlp_linux_aarch64; \
-	    YTDLP_SHA=b6ce97646773070d7a7ffd6bbbdcaecb47c48483909c54c915bf08a7a9b5e0b1; \
+	    YTDLP_SHA=b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc; \
 	    DENO_ASSET=deno-aarch64-unknown-linux-gnu.zip; \
 	    DENO_SHA=6b7cae3a8fc4385a59dea3146fcb8bad7fea4230e0ad36a8c692afacbc254be0 ;; \
 	  *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
