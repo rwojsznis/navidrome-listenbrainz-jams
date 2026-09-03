@@ -166,6 +166,15 @@ func (f Feed) RenderPlaylistName(title string, updated time.Time) (string, error
 	if strings.TrimSpace(f.PlaylistName) == "" {
 		return title, nil
 	}
+	// Older state databases did not persist the feed timestamp. Recover the
+	// date from ListenBrainz's conventional "week of YYYY-MM-DD" title.
+	if updated.Year() <= 1970 {
+		if m := weekOfPattern.FindStringSubmatch(title); len(m) == 2 {
+			if parsed, err := time.Parse("2006-01-02", m[1]); err == nil {
+				updated = parsed
+			}
+		}
+	}
 	t, err := template.New("playlist_name").Option("missingkey=error").Parse(f.PlaylistName)
 	if err != nil {
 		return "", err
@@ -230,6 +239,7 @@ func Load(path string) (*Config, error) {
 
 // envPattern matches ${NAME} and ${NAME:-default}.
 var envPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-([^}]*))?\}`)
+var weekOfPattern = regexp.MustCompile(`(?i)\bweek of\s+(\d{4}-\d{2}-\d{2})`)
 
 // interpolate replaces ${ENV} / ${ENV:-default} references with environment
 // values. An unset variable with no default is an error so misconfiguration

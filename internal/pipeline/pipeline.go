@@ -64,7 +64,7 @@ func (p *Pipeline) RenameConfiguredPlaylists(ctx context.Context) {
 	}
 	for _, pl := range all {
 		f, ok := feeds[pl.FeedName]
-		if !ok || f.PlaylistName == "" || pl.NavidromePlaylistID == "" {
+		if !ok || f.PlaylistName == "" {
 			continue
 		}
 		name, err := f.RenderPlaylistName(pl.SourceTitle, pl.EntryUpdated)
@@ -75,7 +75,16 @@ func (p *Pipeline) RenameConfiguredPlaylists(ctx context.Context) {
 		if client == nil {
 			continue
 		}
-		if err := client.RenamePlaylist(ctx, pl.NavidromePlaylistID, name); err != nil {
+		playlistID := pl.NavidromePlaylistID
+		if playlistID == "" {
+			legacy, findErr := client.FindPlaylistByName(ctx, pl.Title)
+			if findErr != nil || legacy == nil {
+				continue
+			}
+			playlistID = legacy.ID
+			_ = p.store.SetPlaylistNavidromeID(pl.ID, playlistID)
+		}
+		if err := client.RenamePlaylist(ctx, playlistID, name); err != nil {
 			p.log.Warn("rename playlist", "playlist_id", pl.ID, "err", err)
 			continue
 		}
