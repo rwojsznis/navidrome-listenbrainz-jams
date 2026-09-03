@@ -102,3 +102,6 @@ feeds:
     rss_url: "https://listenbrainz.org/syndication-feed/user/emq/recommendations?recommendation_type=weekly-jams"
     navidrome_user: emq
     navidrome_pass: ${EMQ_NAVIDROME_PASS}
+    # Optional Go template for playlist names. Available fields: .Title,
+    # .FeedName, .Date, .Year, .Month, .Day.
+    # playlist_name: "Weekly Jams — {{.Date}}"

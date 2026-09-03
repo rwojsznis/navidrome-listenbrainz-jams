@@ -238,6 +238,7 @@ type app struct {
 func (a *app) tick(ctx context.Context) {
 	slog.Info("tick: start")
 	a.discover(ctx)
+	a.pipe.RenameConfiguredPlaylists(ctx)
 	a.pipe.Run(ctx)
 	slog.Info("tick: done")
 }
@@ -251,7 +252,12 @@ func (a *app) discover(ctx context.Context) {
 			continue
 		}
 		for _, entry := range f.Entries {
-			pl, err := a.store.UpsertPlaylist(feed.Name, entry.ID, entry.Title, feed.NavidromeUser)
+			name, nerr := feed.RenderPlaylistName(entry.Title, entry.Updated)
+			if nerr != nil {
+				slog.Error("render playlist name", "feed", feed.Name, "err", nerr)
+				continue
+			}
+			pl, err := a.store.UpsertPlaylist(feed.Name, entry.ID, name, feed.NavidromeUser, entry.Updated)
 			if err != nil {
 				slog.Error("upsert playlist", "feed", feed.Name, "title", entry.Title, "err", err)
 				continue

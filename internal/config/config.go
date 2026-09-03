@@ -4,9 +4,12 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
+	"text/template"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -155,6 +158,28 @@ type Feed struct {
 	RSSURL        string `yaml:"rss_url"`
 	NavidromeUser string `yaml:"navidrome_user"`
 	NavidromePass string `yaml:"navidrome_pass"`
+	PlaylistName  string `yaml:"playlist_name"`
+}
+
+// RenderPlaylistName applies the optional feed playlist-name template.
+func (f Feed) RenderPlaylistName(title string, updated time.Time) (string, error) {
+	if strings.TrimSpace(f.PlaylistName) == "" {
+		return title, nil
+	}
+	t, err := template.New("playlist_name").Option("missingkey=error").Parse(f.PlaylistName)
+	if err != nil {
+		return "", err
+	}
+	data := struct{ Title, FeedName, Date, Year, Month, Day string }{title, f.Name, updated.Format("2006-01-02"), updated.Format("2006"), updated.Format("01"), updated.Format("02")}
+	var b bytes.Buffer
+	if err := t.Execute(&b, data); err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(b.String())
+	if name == "" {
+		return "", fmt.Errorf("playlist_name rendered an empty name")
+	}
+	return name, nil
 }
 
 // Default values applied when fields are omitted from the YAML.

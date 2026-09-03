@@ -128,6 +128,16 @@ tick (they share the SQLite store).
 
 ## Adding / removing / renaming a feed
 
+### Playlist names
+
+Each feed may set `playlist_name` to a Go template. Available fields are
+`.Title` (the original ListenBrainz entry title), `.FeedName`, `.Date`, `.Year`,
+`.Month`, and `.Day`. For example, `Weekly Jams — {{.Date}}` produces a compact
+date-based name. The original entry title is retained in state so changing the
+template is deterministic. On each tick, stored playlists with a known
+Navidrome playlist ID are renamed through the Subsonic API, including completed
+historical playlists; track state and completion status are not changed.
+
 - **Add a feed** → discovered and processed on the next tick. ✅
 - **Remove or rename a feed** → ⚠️ the feed's existing playlists become
   **orphaned**. The per-playlist Navidrome client is keyed by **feed name** (from

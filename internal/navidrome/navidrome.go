@@ -241,6 +241,15 @@ func (c *Client) AddToPlaylist(ctx context.Context, playlistID string, songIDs [
 	return err
 }
 
+// RenamePlaylist changes an existing playlist's human-readable name.
+func (c *Client) RenamePlaylist(ctx context.Context, playlistID, name string) error {
+	p := url.Values{}
+	p.Set("playlistId", playlistID)
+	p.Set("name", name)
+	_, err := c.get(ctx, "updatePlaylist", p)
+	return err
+}
+
 // ReplacePlaylist overwrites an existing playlist's tracks with exactly the
 // given song ids, in the given order. Subsonic/Navidrome treats createPlaylist
 // with a playlistId as "replace the contents of this playlist", which lets us

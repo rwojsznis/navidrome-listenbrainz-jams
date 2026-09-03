@@ -50,6 +50,41 @@ func New(st *store.Store, cfg *config.Config, log *slog.Logger) *Pipeline {
 // SetDownloader wires the slskd download step (optional).
 func (p *Pipeline) SetDownloader(d Downloader) { p.downloader = d }
 
+// RenameConfiguredPlaylists reconciles names for all stored playlists using
+// their stable Navidrome IDs. It never changes assembly state.
+func (p *Pipeline) RenameConfiguredPlaylists(ctx context.Context) {
+	all, err := p.store.AllPlaylists()
+	if err != nil {
+		p.log.Error("list playlists for rename", "err", err)
+		return
+	}
+	feeds := make(map[string]config.Feed, len(p.cfg.Feeds))
+	for _, f := range p.cfg.Feeds {
+		feeds[f.Name] = f
+	}
+	for _, pl := range all {
+		f, ok := feeds[pl.FeedName]
+		if !ok || f.PlaylistName == "" || pl.NavidromePlaylistID == "" {
+			continue
+		}
+		name, err := f.RenderPlaylistName(pl.SourceTitle, pl.EntryUpdated)
+		if err != nil || name == pl.Title {
+			continue
+		}
+		client := p.clients[pl.FeedName]
+		if client == nil {
+			continue
+		}
+		if err := client.RenamePlaylist(ctx, pl.NavidromePlaylistID, name); err != nil {
+			p.log.Warn("rename playlist", "playlist_id", pl.ID, "err", err)
+			continue
+		}
+		if err := p.store.RenamePlaylist(pl.ID, name); err != nil {
+			p.log.Warn("persist playlist rename", "playlist_id", pl.ID, "err", err)
+		}
+	}
+}
+
 // Run advances every active (not-done) playlist by one step. It runs in two
 // phases ACROSS ALL playlists: first the fast assemble pass (resolve against
 // Navidrome + create/backfill the playlist), then the slow download pass. This
@@ -145,7 +180,12 @@ func (p *Pipeline) assemble(ctx context.Context, pl store.Playlist) ([]store.Tra
 	//    early when nothing is resolved yet — the download pass still needs to run.
 	//    `placed` ends up holding every song id that is in the playlist now.
 	placed := make(map[string]bool)
-	navPl, err := client.FindPlaylistByName(ctx, pl.Title)
+	var navPl *navidrome.Playlist
+	if pl.NavidromePlaylistID != "" {
+		navPl, err = client.GetPlaylist(ctx, pl.NavidromePlaylistID)
+	} else {
+		navPl, err = client.FindPlaylistByName(ctx, pl.Title)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("find playlist: %w", err)
 	}

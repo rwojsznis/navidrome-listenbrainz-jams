@@ -226,7 +226,7 @@ Copy `config.example.yaml` and edit. String values support `${ENV}` and
 | `ytdlp.binary_path` | yt-dlp binary (default `yt-dlp` on PATH) |
 | `ytdlp.cookies_file` | Optional cookies file for age/region-restricted content (`yt-dlp --cookies`) |
 | `web.listen` | Dashboard address, e.g. `:8080` (empty disables it) |
-| `feeds[]` | One entry per feed: `name`, `rss_url`, `navidrome_user`, `navidrome_pass` |
+| `feeds[]` | One entry per feed: `name`, `rss_url`, `navidrome_user`, `navidrome_pass`; optional `playlist_name` Go template (`.Title`, `.FeedName`, `.Date`, `.Year`, `.Month`, `.Day`) |
 
 Playlists are per-user in Navidrome, so each feed authenticates as its own
 `navidrome_user`. The post-import **rescan uses the first feed's credentials**, so

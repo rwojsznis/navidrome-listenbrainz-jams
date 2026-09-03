@@ -3,6 +3,7 @@ package store
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPlaylistAndTrackLifecycle(t *testing.T) {
@@ -13,11 +14,11 @@ func TestPlaylistAndTrackLifecycle(t *testing.T) {
 	defer db.Close()
 
 	// Insert is idempotent on the LB entry id.
-	p1, err := db.UpsertPlaylist("emq-weekly", "lb-entry-1", "Weekly Jams", "emq")
+	p1, err := db.UpsertPlaylist("emq-weekly", "lb-entry-1", "Weekly Jams", "emq", time.Now())
 	if err != nil {
 		t.Fatalf("UpsertPlaylist: %v", err)
 	}
-	p2, err := db.UpsertPlaylist("emq-weekly", "lb-entry-1", "Weekly Jams (changed)", "emq")
+	p2, err := db.UpsertPlaylist("emq-weekly", "lb-entry-1", "Weekly Jams (changed)", "emq", time.Now())
 	if err != nil {
 		t.Fatalf("UpsertPlaylist again: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestRetryReactivatesPlaylist(t *testing.T) {
 	}
 	defer db.Close()
 
-	p, _ := db.UpsertPlaylist("feed", "e1", "PL", "u")
+	p, _ := db.UpsertPlaylist("feed", "e1", "PL", "u", time.Now())
 	_ = db.UpsertTrack(p.ID, 1, "m1", "A", "T1")
 	_ = db.UpsertTrack(p.ID, 2, "m2", "B", "T2")
 

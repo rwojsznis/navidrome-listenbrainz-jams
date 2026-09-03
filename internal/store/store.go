@@ -40,6 +40,8 @@ type Playlist struct {
 	FeedName            string
 	LBEntryID           string
 	Title               string
+	SourceTitle         string
+	EntryUpdated        time.Time
 	NavidromeUser       string
 	NavidromePlaylistID string
 	Status              PlaylistStatus
@@ -83,6 +85,8 @@ CREATE TABLE IF NOT EXISTS playlists (
 	feed_name             TEXT NOT NULL,
 	lb_entry_id           TEXT NOT NULL UNIQUE,
 	title                 TEXT NOT NULL,
+	source_title          TEXT NOT NULL DEFAULT '',
+	entry_updated         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	navidrome_user        TEXT NOT NULL,
 	navidrome_playlist_id TEXT NOT NULL DEFAULT '',
 	status                TEXT NOT NULL DEFAULT 'pending',
@@ -139,6 +143,8 @@ func Open(path string) (*Store, error) {
 // means it is already present).
 func migrate(db *sql.DB) error {
 	adds := []string{
+		`ALTER TABLE playlists ADD COLUMN source_title TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE playlists ADD COLUMN entry_updated TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:00'`,
 		`ALTER TABLE tracks ADD COLUMN lyrics_status TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT ''`,
 	}
@@ -147,7 +153,16 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
+	if _, err := db.Exec(`UPDATE playlists SET source_title = title WHERE source_title = ''`); err != nil {
+		return err
+	}
 	return nil
+}
+
+// RenamePlaylist records the desired Navidrome name after a successful API rename.
+func (s *Store) RenamePlaylist(id int64, title string) error {
+	_, err := s.db.Exec(`UPDATE playlists SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, title, id)
+	return err
 }
 
 // Close closes the underlying database.
@@ -156,12 +171,12 @@ func (s *Store) Close() error { return s.db.Close() }
 // UpsertPlaylist inserts a playlist keyed by its ListenBrainz entry id, or
 // returns the existing row if already present. It never overwrites an existing
 // row's mutable state.
-func (s *Store) UpsertPlaylist(feedName, lbEntryID, title, navidromeUser string) (*Playlist, error) {
+func (s *Store) UpsertPlaylist(feedName, lbEntryID, title, navidromeUser string, entryUpdated time.Time) (*Playlist, error) {
 	_, err := s.db.Exec(`
-		INSERT INTO playlists (feed_name, lb_entry_id, title, navidrome_user)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO playlists (feed_name, lb_entry_id, title, source_title, navidrome_user, entry_updated)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(lb_entry_id) DO NOTHING`,
-		feedName, lbEntryID, title, navidromeUser)
+		feedName, lbEntryID, title, title, navidromeUser, entryUpdated)
 	if err != nil {
 		return nil, fmt.Errorf("upsert playlist: %w", err)
 	}
@@ -171,7 +186,7 @@ func (s *Store) UpsertPlaylist(feedName, lbEntryID, title, navidromeUser string)
 // PlaylistByEntryID returns the playlist with the given ListenBrainz entry id.
 func (s *Store) PlaylistByEntryID(lbEntryID string) (*Playlist, error) {
 	row := s.db.QueryRow(`
-		SELECT id, feed_name, lb_entry_id, title, navidrome_user,
+		SELECT id, feed_name, lb_entry_id, title, source_title, entry_updated, navidrome_user,
 		       navidrome_playlist_id, status, created_at, updated_at
 		FROM playlists WHERE lb_entry_id = ?`, lbEntryID)
 	return scanPlaylist(row)
@@ -180,7 +195,7 @@ func (s *Store) PlaylistByEntryID(lbEntryID string) (*Playlist, error) {
 // AllPlaylists returns every playlist, newest first (for the UI).
 func (s *Store) AllPlaylists() ([]Playlist, error) {
 	rows, err := s.db.Query(`
-		SELECT id, feed_name, lb_entry_id, title, navidrome_user,
+		SELECT id, feed_name, lb_entry_id, title, source_title, entry_updated, navidrome_user,
 		       navidrome_playlist_id, status, created_at, updated_at
 		FROM playlists ORDER BY created_at DESC`)
 	if err != nil {
@@ -202,7 +217,7 @@ func (s *Store) AllPlaylists() ([]Playlist, error) {
 // PlaylistByID returns a single playlist, or nil if not found.
 func (s *Store) PlaylistByID(id int64) (*Playlist, error) {
 	row := s.db.QueryRow(`
-		SELECT id, feed_name, lb_entry_id, title, navidrome_user,
+		SELECT id, feed_name, lb_entry_id, title, source_title, entry_updated, navidrome_user,
 		       navidrome_playlist_id, status, created_at, updated_at
 		FROM playlists WHERE id = ?`, id)
 	return scanPlaylist(row)
@@ -211,7 +226,7 @@ func (s *Store) PlaylistByID(id int64) (*Playlist, error) {
 // ActivePlaylists returns playlists not yet marked done, for the daemon to advance.
 func (s *Store) ActivePlaylists() ([]Playlist, error) {
 	rows, err := s.db.Query(`
-		SELECT id, feed_name, lb_entry_id, title, navidrome_user,
+		SELECT id, feed_name, lb_entry_id, title, source_title, entry_updated, navidrome_user,
 		       navidrome_playlist_id, status, created_at, updated_at
 		FROM playlists WHERE status != ? ORDER BY created_at`, PlaylistDone)
 	if err != nil {
@@ -410,8 +425,8 @@ type scanner interface {
 
 func scanPlaylist(sc scanner) (*Playlist, error) {
 	var p Playlist
-	err := sc.Scan(&p.ID, &p.FeedName, &p.LBEntryID, &p.Title, &p.NavidromeUser,
-		&p.NavidromePlaylistID, &p.Status, &p.CreatedAt, &p.UpdatedAt)
+	err := sc.Scan(&p.ID, &p.FeedName, &p.LBEntryID, &p.Title, &p.SourceTitle,
+		&p.EntryUpdated, &p.NavidromeUser, &p.NavidromePlaylistID, &p.Status, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
