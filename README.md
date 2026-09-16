@@ -127,7 +127,7 @@ List of playlists synced with RSS:
 Single playlist status:
 ![](/docs/screenshots/playlist.jpg)
 
-Playlists are synced into Navidrome, here in [Psysonic client](https://github.com/Psychotoxical/psysonic):
+Playlists are synced into Navidrome, here in [fastsonic client](https://github.com/rwojsznis/fastsonic):
 ![](/docs/screenshots/client.jpg)
 
 ## What it does
