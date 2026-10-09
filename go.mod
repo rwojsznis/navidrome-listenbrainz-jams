@@ -6,7 +6,7 @@ require (
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/go-flac/flacvorbis/v2 v2.0.2
 	github.com/go-flac/go-flac/v2 v2.0.4
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/text v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
