@@ -1,6 +1,6 @@
 module github.com/rwojsznis/navidrome-listenbrainz-jams
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/bogem/id3v2/v2 v2.1.4
