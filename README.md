@@ -1,5 +1,9 @@
 # navidrome-listenbrainz-jams
 
+> [!WARNING]  
+> Suggestions from ListenBrainz turned out to be not very reliable (seems they struggle with scaling); also playlists are not very diverse; maybe importing custom playlists [via Explo](https://github.com/LumePart/Explo) or other alternative will turn out to be a bit better option
+> for now this project won't be maintained aside of auto-upgrades
+
 > [!NOTE]
 > This is my AI slop. There are many like it, but this one is mine.
 
